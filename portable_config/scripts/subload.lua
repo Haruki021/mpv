@@ -1,23 +1,19 @@
 local msg = require 'mp.msg'
 local utils = require 'mp.utils'
 
-local range = mp.get_property("video-exts")
-
 local function sub_path()
-    local file_path = mp.get_property("path", "")
-    if not range:find(file_path:match("%.(%w+)$")) then return end
+    local path = mp.get_property("working-directory")
 
     --返回当前文件夹下字幕文件夹路径
-    local dirname, filename = utils.split_path(file_path)
-    local subdirs = utils.readdir(dirname, "dirs")
+    local subdirs = utils.readdir(path, "dirs")
     for _, v in ipairs(subdirs) do
         if v:lower():match("sub") then
-            return utils.join_path(dirname, v)
+            return utils.join_path(path, v)
         end
     end
 
     --返回父级文件夹下字幕文件夹路径
-    local pdir, sdir = dirname:match("(.+[\\/])(.+[\\/])")
+    local pdir, sdir = path:match("(.+[\\/])(.+[\\/])")
     subdirs = assert(utils.readdir(pdir, "dirs"))
     for _, v in ipairs(subdirs) do
         if v:lower():match("sub") then
