@@ -6,10 +6,10 @@ local data = {}
 
 --加载已保存的播放进度
 local function load_resume_data()
-    local status, file = pcall(io.open(resume_data_path, "r"))
-    if not status then return {} end
-    local content = file:read("*a")
-    file:close()
+    local f = io.open(resume_data_path, "r")
+    if not f then return {} end
+    local content = f:read("*a")
+    f:close()
     return utils.parse_json(content) or {}
 end
 
