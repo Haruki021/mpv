@@ -2,19 +2,20 @@ local msg = require 'mp.msg'
 local utils = require 'mp.utils'
 
 local function sub_path()
-    local path = mp.get_property("working-directory")
+    local file_path = mp.get_property("path", "")
 
     --返回当前文件夹下字幕文件夹路径
-    local subdirs = utils.readdir(path, "dirs")
+    local dirname = utils.split_path(file_path) or ""
+    local subdirs = utils.readdir(dirname, "dirs") or {}
     for _, v in ipairs(subdirs) do
         if v:lower():match("sub") then
-            return utils.join_path(path, v)
+            return utils.join_path(dirname, v)
         end
     end
 
     --返回父级文件夹下字幕文件夹路径
-    local pdir, sdir = path:match("(.+[\\/])(.+[\\/])")
-    subdirs = assert(utils.readdir(pdir, "dirs"))
+    local pdir, sdir = dirname:match("(.+[\\/])(.+[\\/])")
+    subdirs = utils.readdir(pdir or "", "dirs") or {}
     for _, v in ipairs(subdirs) do
         if v:lower():match("sub") then
             return utils.join_path(pdir..v, sdir)
