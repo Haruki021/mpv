@@ -6,9 +6,10 @@ local data = {}
 
 --加载已保存的播放进度
 local function load_resume_data()
-    local f = assert(io.open(resume_data_path, "r"))
-    local content = f:read("*a")
-    f:close()
+    local status, file = pcall(io.open(resume_data_path, "r"))
+    if not status then return {} end
+    local content = file:read("*a")
+    file:close()
     return utils.parse_json(content) or {}
 end
 
@@ -43,8 +44,8 @@ local function resume_playback()
     if not mp.get_property_bool("idle-active") then return end
 
     local data = load_resume_data()
-    if not utils.file_info(data.path) then
-        mp.osd_message("Invalid: No watched record !")
+    if not data.path or utils.file_info(data.path) then
+        mp.osd_message("Note: No valid records!", 3)
         return
     end
 
