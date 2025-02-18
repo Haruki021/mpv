@@ -7,11 +7,18 @@ local function sub_path()
     local file_path = mp.get_property("path", "")
     if not range:find(file_path:match("%.(%w+)$")) then return end
 
+    --返回当前文件夹下字幕文件夹路径
     local dirname, filename = utils.split_path(file_path)
-    local pdir, sdir = dirname:match("(.+[\\/])(.+[\\/])")
-    if not pdir then return end
-    local subdirs = utils.readdir(pdir, "dirs")
+    local subdirs = utils.readdir(dirname, "dirs")
+    for _, v in ipairs(subdirs) do
+        if v:lower():match("sub") then
+            return utils.join_path(dirname, v)
+        end
+    end
 
+    --返回父级文件夹下字幕文件夹路径
+    local pdir, sdir = dirname:match("(.+[\\/])(.+[\\/])")
+    subdirs = assert(utils.readdir(pdir, "dirs"))
     for _, v in ipairs(subdirs) do
         if v:lower():match("sub") then
             return utils.join_path(pdir..v, sdir)
