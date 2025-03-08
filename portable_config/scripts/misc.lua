@@ -12,9 +12,11 @@ mp.add_key_binding("e", "open-in-explorer", function()
             args = { 'explorer', '/select,',  path .. ' ' },
         })
     else
-        mp.osd_message("Invalid: " .. (path or "No path provided !"))
+        mp.osd_message("Invalid: " ..(path or "No valid path found."), 3)
     end
 end)
+
+---------------------------------------------------------------------------------------------
 
 --[[-----------------------------------------------------------------------------------------
 mp.add_forced_key_binding("KP2", "playlist-prev-playlist", function()
@@ -34,29 +36,26 @@ mp.add_forced_key_binding("KP2", "playlist-prev-playlist", function()
     end
     mp.commandv("set", "playlist-pos", current_pos+1)
 end)
-
---[[------------------------------------------------------------------------------------------
+]]--
+--------------------------------------------------------------------------------------------
 -- This script pauses playback when minimizing the window, and resumes playback
 -- if it's brought back again. If the player was already paused when minimizing,
 -- then try not to mess with the pause state.
 
-local did_minimize = false
-
 mp.observe_property("window-minimized", "bool", function(name, value)
-    local pause = mp.get_property_bool("pause")
-    if value then
-        if not pause then
-            mp.set_property_bool("pause", true)
-            did_minimize = true
-        end
-    else
-        if did_minimize and pause then
-            mp.set_property_bool("pause", false)
-        end
-        did_minimize = false
+    if value and not mp.get_property_bool("current-tracks/video/image") then
+        mp.set_property_bool("pause", true)
+    elseif not value and not mp.get_property_bool("current-tracks/video/image") then
+        mp.set_property_bool("pause", false)
     end
 end)
 
+
+mp.observe_property("current-tracks/video/image", "bool", function(name, value)
+    if value and not mp.get_property_bool("current-tracks/video/albumart") and mp.get_property("geometry")=="" then
+        mp.commandv("set", "geometry", "88%x88%+50%+50%")
+    end
+end)
 ---------------------------------------------------------------------------------------------
 
 --[[
