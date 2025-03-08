@@ -3,13 +3,14 @@ local utils = require 'mp.utils'
 
 local function sub_path()
     local file_path = mp.get_property("path", "")
+    local dir_path = "sub,subs,subtitle,subtitles,字幕"
 
     --返回当前文件夹下字幕文件夹路径
-    local dirname = utils.split_path(file_path) or ""
-    local subdirs = utils.readdir(dirname, "dirs") or {}
+    local dirname = utils.split_path(file_path)
+    local subdirs = utils.readdir(dirname or "", "dirs") or {}
     for _, v in ipairs(subdirs) do
-        if v:lower():match("sub") then
-            return utils.join_path(dirname, v)
+        if dir_path:match(v:lower()) then
+            return v
         end
     end
 
@@ -17,8 +18,8 @@ local function sub_path()
     local pdir, sdir = dirname:match("(.+[\\/])(.+[\\/])")
     subdirs = utils.readdir(pdir or "", "dirs") or {}
     for _, v in ipairs(subdirs) do
-        if v:lower():match("sub") then
-            return utils.join_path(pdir..v, sdir)
+        if dir_path:match(v:lower()) then
+            return utils.join_path("../"..v, sdir)
         end
     end
 end
@@ -31,19 +32,3 @@ local function load_subs()
 end
 
 mp.register_event("start-file", load_subs)
-
-
-
---[[
-    local subfiles = utils.readdir(dirname, "files")
-    if subfiles==nil then return end
-    local subname = filename:match("(.+)%.%w+$"):gsub("%p", "%%".."%1")
-
-    for _,v in ipairs(subfiles) do
-        if v:match(subname) then
-            mp.commandv("sub-add", dirname..v, "cached")
-        end
-    end
-end
-]]--
---mp.add_hook("on_preloaded", 50, load_subs)
