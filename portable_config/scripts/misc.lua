@@ -11,7 +11,7 @@ mp.add_key_binding("e", "open-in-explorer", function()
             args = { 'explorer', '/select,', path},
         })
     else
-        mp.osd_message("Invalid: " ..(path or "No valid path found."), 3)
+        mp.osd_message("No valid path found.", 3)
     end
 end)
 ---------------------------------------------------------------------------------------------
