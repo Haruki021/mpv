@@ -17,10 +17,8 @@ end)
 ---------------------------------------------------------------------------------------------
 ---------------------------------------------------------------------------------------------
 mp.observe_property("window-minimized", "bool", function(name, value)
-    if value and not mp.get_property_bool("current-tracks/video/image") then
-        mp.set_property_bool("pause", true)
-    elseif not value and not mp.get_property_bool("current-tracks/video/image") then
-        mp.set_property_bool("pause", false)
+    if mp.get_property_number("current-tracks/video/demux-par") then
+        mp.set_property_bool("pause", value)
     end
 end)
 
@@ -28,6 +26,7 @@ end)
 mp.observe_property("current-tracks/video/image", "bool", function(name, value)
     if value and not mp.get_property_bool("current-tracks/video/albumart") and mp.get_property("geometry")=="" then
         mp.commandv("set", "geometry", "88%x88%+50%+50%")
+        mp.commandv("set", "osc", "no")
     end
 end)
 ---------------------------------------------------------------------------------------------
