@@ -1,3 +1,4 @@
+local msg = require 'mp.msg'
 local utils = require 'mp.utils'
 ---------------------------------------------------------------------------------------------
 ---------------------------------------------------------------------------------------------
@@ -21,15 +22,11 @@ mp.observe_property("window-minimized", "bool", function(name, value)
         mp.set_property_bool("pause", value)
     end
 end)
-
-mp.observe_property("current-tracks/video", "native", function(name, value)
-    if value and value.image and not value.albumart and mp.get_property("geometry")=="" then
-        mp.set_property("geometry", "88%x88%+50%+50%")
-        mp.set_property("osc", "no")
-        mp.input_enable_section("section", "allow-hide-cursor")
-    end
-end)
 ---------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------
+if mp.get_property_bool("load-select") then
+    mp.commandv("load-input-conf", "~~/script-opts/script_input.conf")
+end
 
 --[[
 -- the coroutine will yield after the clickdown event and resume after the clickup event
@@ -50,3 +47,6 @@ end)
 -- complex ensures the main function will be called for separate click down/up events
 mp.add_forced_key_binding("MBTN_LEFT", "pause-or-drag", main, {complex = true})
 ---]]
+
+
+--mp.input_enable_section("section", "allow-hide-cursor")
