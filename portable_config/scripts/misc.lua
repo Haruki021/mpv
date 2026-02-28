@@ -1,10 +1,8 @@
-local msg = require 'mp.msg'
-local utils = require 'mp.utils'
 ---------------------------------------------------------------------------------------------
 ---------------------------------------------------------------------------------------------
 mp.add_key_binding("e", "open-in-explorer", function()
     local path = mp.get_property("path")
-    if utils.file_info(path or "") then
+    if require 'mp.utils'.file_info(path or "") then
         mp.command_native({
             name = "subprocess",
             playback_only = false,
@@ -22,6 +20,9 @@ mp.observe_property("window-minimized", "bool", function(name, value)
         mp.set_property_bool("pause", value)
     end
 end)
+---------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------
+
 ---------------------------------------------------------------------------------------------
 ---------------------------------------------------------------------------------------------
 if mp.get_property_bool("load-select") then
@@ -47,6 +48,3 @@ end)
 -- complex ensures the main function will be called for separate click down/up events
 mp.add_forced_key_binding("MBTN_LEFT", "pause-or-drag", main, {complex = true})
 ---]]
-
-
---mp.input_enable_section("section", "allow-hide-cursor")
