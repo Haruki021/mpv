@@ -1,4 +1,3 @@
-local msg = require 'mp.msg'
 local utils = require 'mp.utils'
 
 local resume_data_path = mp.command_native({"expand-path", "~~/cache/resume.jsonl"})
