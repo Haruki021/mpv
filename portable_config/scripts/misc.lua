@@ -22,13 +22,23 @@ mp.observe_property("window-minimized", "bool", function(name, value)
 end)
 ---------------------------------------------------------------------------------------------
 ---------------------------------------------------------------------------------------------
-
----------------------------------------------------------------------------------------------
----------------------------------------------------------------------------------------------
-if mp.get_property_bool("load-select") then
-    mp.commandv("load-input-conf", "~~/script-opts/script_input.conf")
-end
-
+mp.add_key_binding("/", "picture-in-picture", function()
+    local list = {fullscreen=false, border=false, ontop=true, geometry="20%x20%-100-100"}
+    if mp.get_property_native("geometry")==list.geometry then
+        for k, v in pairs(list) do
+            mp.set_property_native(k, mp.get_property_native("user-data/pip/"..k))
+        end
+    else
+        for k, v in pairs(list) do
+            local t = mp.get_property_native(k)
+            if k=="geometry" and t=="" then t="50%:50%" end
+            mp.set_property_native("user-data/pip/"..k, t)
+            mp.set_property_native(k, v)
+        end
+    end
+end)
+----------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------
 --[[
 -- the coroutine will yield after the clickdown event and resume after the clickup event
 local main = coroutine.wrap(function()
