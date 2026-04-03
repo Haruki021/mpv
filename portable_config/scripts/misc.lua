@@ -23,7 +23,7 @@ end)
 ---------------------------------------------------------------------------------------------
 ---------------------------------------------------------------------------------------------
 mp.add_key_binding("/", "picture-in-picture", function()
-    local list = {fullscreen=false, border=false, ontop=true, geometry="20%x20%-100-100"}
+    local list = {fullscreen=false, border=false, ontop=true, geometry="20%x20%-50-50"}
     if mp.get_property_native("geometry")==list.geometry then
         for k, v in pairs(list) do
             mp.set_property_native(k, mp.get_property_native("user-data/pip/"..k))
