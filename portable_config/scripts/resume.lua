@@ -25,13 +25,10 @@ local function resume_playback()
     if not mp.get_property_bool("idle-active") then return end
 
     local data = load_resume_data()
-    if not data.path or not utils.file_info(data.path) and not data.path:match("..+://") then
-        mp.osd_message("No valid records found.", 3)
-        return
-    end
-
+    local status = pcall(mp.commandv, "loadfile", data.path)
+    if not status then  mp.osd_message("No valid records found.", 3) return end
     --mp.commandv("loadfile", data.path, "replace", 1, "start="..data.time)
-    mp.commandv("loadfile", data.path)
+
     local function init_handler()
         if data.time then mp.commandv("seek", data.time, "absolute") end
         --if data.pos then mp.commandv("add", "playlist-pos", data.pos) end
