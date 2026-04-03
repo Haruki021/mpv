@@ -1,8 +1,8 @@
 ---------------------------------------------------------------------------------------------
 ---------------------------------------------------------------------------------------------
 mp.add_key_binding("e", "open-in-explorer", function()
-    local path = mp.get_property("path")
-    if require 'mp.utils'.file_info(path or "") then
+    local path = mp.get_property("path", "")
+    if require 'mp.utils'.file_info(path) then
         mp.command_native({
             name = "subprocess",
             playback_only = false,
