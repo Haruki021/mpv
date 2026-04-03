@@ -57,13 +57,13 @@ local function xml_unescape(s)
 end
 
 -- 解析XML弹幕
-local function parse_xml_danmakus(xml_content)
-    local danmakus = {}
+local function parse_xml_danmaku(xml_content)
+    local danmaku = {}
     local pattern = '<d%s+p="([^"]-)"[^>]->(.-)</d>'
     for p_attr, text in string.gmatch(xml_content, pattern) do
-        table.insert(danmakus, {attr = p_attr, text = xml_unescape(text)})
+        table.insert(danmaku, {attr = p_attr, text = xml_unescape(text)})
     end
-    return danmakus
+    return danmaku
 end
 
 -- 解析弹幕属性（官方标准）
@@ -88,7 +88,7 @@ local track_pool = {}  -- 存储每个轨道的【结束占用时间】
 -- 动态轨道管理
 local function alloc_track(start_time, duration)
     local best_track, min_time = 1, 1/0
-    for i=1, 16 do
+    for i=1, 18 do
         if not track_pool[i] or track_pool[i] <= start_time then best_track=i break end
         if track_pool[i] < min_time then min_time=track_pool[i] best_track=i end
     end
@@ -132,7 +132,7 @@ local function danmaku_to_ass(danmaku_text, attrs, fps)
     end
 
     local end_time = attrs.start_time + duration
-    local ass_text = string.format("{\\fs%d\\1c%s\\alpha&H33&}%s%s",
+    local ass_text = string.format("{\\fs%d\\1c%s\\alpha&H33}%s%s",
         attrs.font_size, color, effect, safe_text)
 
     return string.format("Dialogue: 0,%s,%s,%s,,0,0,0,,%s",
@@ -150,49 +150,53 @@ local function get_danmaku_url()
     end
 end
 ]]--
-local function get_danmaku_url()
+local function get_danmaku_info()
     local result = mp.get_property_native("user-data/mpv/ytdl/json-subprocess-result")
+    --local data = require 'mp.utils'.parse_json(result.stdout or "") or {}
+    --return {url=((data.requested_subtitles or {}).danmaku or {}).url, fps=data.fps}
     local url = result and result.stdout:match("(https?://comment%.bilibili%.com/%d-%.xml)")
-    local fps = result and result.stdout:match("\"fps\":%s*(%d+)")
-    return url, fps
+    local fps = result and result.stdout:match('"fps":%s*(%d+)')
+    return {url=url, fps=fps}
 end
 
-local function process_danmaku(url, fps, callback)
-    local userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36 Edg/146.0.0.0"
+local function process_danmaku(data, callback)
+    local userAgent = mp.get_property("file-local-options/user-agent", "")
     mp.command_native_async({
-        name = "subprocess", capture_stdout = true, capture_stderr=true,
-        args = {"curl", "-fs", url, "-A", userAgent, "--compressed"}},
+        name = "subprocess", capture_stdout = true, capture_stderr = true,
+        args = {"curl", "-fs", data.url, "-A", userAgent, "--compressed"}},
         function(_, res)
         if not res.stdout or res.stderr~="" then callback() end
 
-        local danmakus = parse_xml_danmakus(res.stdout)
+        local danmaku = parse_xml_danmaku(res.stdout)
         local ass_content = {ASS_HEADER}
         track_pool = {}
 
-        table.sort(danmakus, function(a, b)
+        table.sort(danmaku, function(a, b)
             return parse_danmaku_attr(a.attr).start_time < parse_danmaku_attr(b.attr).start_time
         end)
 
-        for _, dm in ipairs(danmakus) do
-            local ass_line = danmaku_to_ass(dm.text, parse_danmaku_attr(dm.attr), fps)
+        for _, dm in ipairs(danmaku) do
+            local ass_line = danmaku_to_ass(dm.text, parse_danmaku_attr(dm.attr), data.fps)
             if ass_line ~= "" then table.insert(ass_content, ass_line) end
         end
 
         local ass_file = io.open(ass_path, "w")
-        if ass_file then ass_file:write(table.concat(ass_content, "\n")) ass_file:close() end
+        if not ass_file then callback() end
+        ass_file:write(table.concat(ass_content, "\n"))
+        ass_file:close()
 
-        pcall(mp.commandv, "sub-add", ass_path, "auto")
+        mp.commandv("sub-add", ass_path, "auto")
         mp.set_property_number("secondary-sid", 1)
-        mp.msg.info("Total "..#danmakus.." danmakus loaded.")
+        mp.msg.info("Total "..#danmaku.." danmaku loaded.")
         if callback then callback() end
     end)
 end
 
 mp.add_hook("on_preloaded", 50, function(hook)
-    local url, fps = get_danmaku_url()
-    if not url or not fps then return end
-    pcall(mp.commandv, "sub-remove", 1)
+    local data = get_danmaku_info()
+    if not next(data) then return end
+    mp.commandv("sub-remove", 1)
     mp.set_property("secondary-sub-ass-override", "scale")
     hook:defer()
-    process_danmaku(url, fps, function() hook:cont() end)
+    process_danmaku(data, function() hook:cont() end)
 end)
