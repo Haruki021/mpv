@@ -106,8 +106,8 @@ end
 local function generate_move_effect(danmaku_text, attrs, data)
     local text_len = utf8_len(danmaku_text)
     local text_width = text_len*attrs.font_size*0.88
-    local speed = data.fps*(data.width+text_width)*2
-    local move_duration = 1920*(1920+2*text_width)/speed
+    local speed = data.fps*(data.width+2*text_width)
+    local move_duration = 1920*(1920+text_width)/speed
 
     local track_height = attrs.font_size + 2
     local max_tracks = math.min(math.floor(960/track_height), 20)
