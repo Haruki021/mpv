@@ -66,10 +66,17 @@ local function parse_danmaku_attr(attr_str)
     local parts = {}
     for p in attr_str:gmatch("[^,]+") do table.insert(parts, p) end
 
+    -- 逐字段解析（严格对应B站官方顺序）
     attrs.start_time = tonumber(parts[1]) or 0
     attrs.mode = tonumber(parts[2]) or 1
-    attrs.font_size = math.max(tonumber(parts[3]) or 40, 40)
+    attrs.font_size = math.max(tonumber(parts[3]) or 40, 40)  -- 不小于40
     attrs.color = tonumber(parts[4]) or 0xFFFFFF
+    attrs.send_time = tonumber(parts[5]) or 0
+    attrs.pool_type = tonumber(parts[6]) or 0
+    attrs.user_id = parts[7] or ""
+    attrs.row_id = parts[8] or ""
+    attrs.weight = tonumber(parts[9]) or 0
+
     return attrs
 end
 
@@ -107,11 +114,7 @@ local function generate_move_effect(danmaku_text, attrs, data)
     local track = alloc_track(attrs.start_time, move_duration, max_tracks)
     local y_pos = track * track_height
     
-    if attrs.mode == 6 then
-        return {string.format("\\move(-%d,%d,1920,%d)", text_width, y_pos, y_pos)}, move_duration
-    else
-        return {string.format("\\move(1920,%d,-%d,%d)", y_pos, text_width, y_pos)}, move_duration
-    end
+    return {string.format("\\move(1920,%d,-%d,%d)", y_pos, text_width, y_pos)}, move_duration
 end
 
 local function danmaku_to_ass(danmaku_text, attrs, data)
