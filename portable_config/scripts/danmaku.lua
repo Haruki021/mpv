@@ -10,9 +10,9 @@ WrapStyle: 2
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Microsoft YaHei,40,&H33FFFFFF,&H000000FF,&H33000000,&H00000000,1,0,0,0,100,100,0,0,1,1,0,7,0,0,0,1
-Style: Top,Microsoft YaHei,40,&H33FFFFFF,&H000000FF,&H33000000,&H00000000,1,0,0,0,100,100,0,0,1,1,0,8,0,0,0,1
-Style: Bottom,Microsoft YaHei,40,&H33FFFFFF,&H00000000,&H33000000,&H00000000,1,0,0,0,100,100,0,0,1,1,0,2,0,0,0,1
+Style: Default,Microsoft YaHei,40,&H33FFFFFF,&H000000FF,&H33000000,&H00000000,0,0,0,0,100,100,0,0,1,1,0,7,0,0,0,1
+Style: Top,Microsoft YaHei,40,&H33FFFFFF,&H000000FF,&H33000000,&H00000000,0,0,0,0,100,100,0,0,1,1,0,8,0,0,0,1
+Style: Bottom,Microsoft YaHei,40,&H33FFFFFF,&H00000000,&H33000000,&H00000000,0,0,0,0,100,100,0,0,1,1,0,2,0,0,0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -106,11 +106,11 @@ end
 local function generate_move_effect(danmaku_text, attrs, data)
     local text_len = utf8_len(danmaku_text)
     local text_width = text_len*attrs.font_size*0.88
-    local speed = data.fps*(data.width+text_width)*2
-    local move_duration = 1920*(1920+2*text_width)/speed
+    local speed = data.fps*(data.width+4*text_width)*2.8
+    local move_duration = data.width*(data.width+8*text_width)/speed
 
     local track_height = attrs.font_size + 2
-    local max_tracks = math.min(math.floor(960/track_height), 20)
+    local max_tracks = math.min(math.floor(data.height/track_height), 20)
     local track = alloc_track(attrs.start_time, move_duration, max_tracks)
     local y_pos = track * track_height
     
@@ -148,7 +148,8 @@ local function get_danmaku_info()
     return {
         url = ((data.requested_subtitles or {}).danmaku or {}).url,
         fps = data.fps or 30,
-        width = data.width or 1920
+        width = data.width or 1920,
+        height = data.height or 1080
     }
 end
 
@@ -157,7 +158,7 @@ local function process_danmaku(data)
     local userAgent = mp.get_property("file-local-options/user-agent", "")
     local res = mp.command_native({
         name = "subprocess", capture_stdout = true, capture_stderr = true,
-        args = {"curl", "-fsL", data.url, "-A", userAgent, "--compressed"}})
+        args = {"curl", "-fs", data.url, "-A", userAgent, "--compressed"}})
     if not res.stdout or res.stderr ~= "" then return end
 
     local danmaku = parse_xml_danmaku(res.stdout)
