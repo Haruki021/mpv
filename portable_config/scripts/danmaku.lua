@@ -7,6 +7,7 @@ PlayResX: 1920
 PlayResY: 1080
 Timer: 100.0000
 WrapStyle: 2
+ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
@@ -103,21 +104,20 @@ local function alloc_track(start_time, duration, max_tracks)
 end
 
 -- 生成滚动弹幕移动动画
-local function generate_move_effect(danmaku_text, attrs, data)
+local function generate_move_effect(danmaku_text, attrs)
     local text_len = utf8_len(danmaku_text)
-    local text_width = text_len*attrs.font_size*0.88
-    local speed = data.fps*(data.width+4*text_width)*2.8
-    local move_duration = data.width*(data.width+8*text_width)/speed
+    local text_width = text_len*attrs.font_size*0.85
+    local move_duration = (1920+text_width)/(120+text_len)
 
     local track_height = attrs.font_size + 2
-    local max_tracks = math.min(math.floor(data.height/track_height), 20)
+    local max_tracks = math.min(math.floor(1080/track_height), 18)
     local track = alloc_track(attrs.start_time, move_duration, max_tracks)
     local y_pos = track * track_height
     
     return {string.format("\\move(1920,%d,-%d,%d)", y_pos, text_width, y_pos)}, move_duration
 end
 
-local function danmaku_to_ass(danmaku_text, attrs, data)
+local function danmaku_to_ass(danmaku_text, attrs)
     if not danmaku_text then return "" end
     local color = convert_bili_color_to_ass(attrs.color)
     local style = "Default"
@@ -128,7 +128,7 @@ local function danmaku_to_ass(danmaku_text, attrs, data)
     elseif attrs.mode == 4 then
         style = "Bottom"
     else
-        effect, attrs.duration = generate_move_effect(danmaku_text, attrs, data)
+        effect, attrs.duration = generate_move_effect(danmaku_text, attrs)
     end
 
     if color ~= "&HFFFFFF" then table.insert(effect, 1,"\\1c"..color ) end
@@ -147,19 +147,18 @@ local function get_danmaku_info()
     local data = require 'mp.utils'.parse_json(result.stdout or "") or {}
     return {
         url = ((data.requested_subtitles or {}).danmaku or {}).url,
-        fps = data.fps or 30,
-        width = data.width or 1920,
-        height = data.height or 1080
+        fps = data.fps or 30
     }
 end
 
 local function process_danmaku(data)
-    if not data.url then return end
+    if not data.url then return false end
     local userAgent = mp.get_property("file-local-options/user-agent", "")
     local res = mp.command_native({
         name = "subprocess", capture_stdout = true, capture_stderr = true,
         args = {"curl", "-fs", data.url, "-A", userAgent, "--compressed"}})
-    if not res.stdout or res.stderr ~= "" then return end
+
+    if not res.stdout or res.stderr ~= "" then return false end
 
     local danmaku = parse_xml_danmaku(res.stdout)
     local ass_content = {ASS_HEADER}
@@ -170,7 +169,7 @@ local function process_danmaku(data)
     end)
     
     for _, dm in ipairs(danmaku) do
-        local ass_line = danmaku_to_ass(dm.text, dm.attrs, data)
+        local ass_line = danmaku_to_ass(dm.text, dm.attrs)
         if ass_line ~= "" then table.insert(ass_content, ass_line) end
     end
 
@@ -184,8 +183,19 @@ local function process_danmaku(data)
     mp.commandv("sub-add", ass_path, "auto")
     mp.set_property_number("secondary-sid", 1)
     mp.msg.info("Total "..#danmaku.." danmakus loaded.")
+    return data.fps < 60
 end
 
 mp.add_hook("on_preloaded", 50, function()
-    process_danmaku(get_danmaku_info())
+    local status = process_danmaku(get_danmaku_info())
+    local vflag = mp.get_property("vf"):match("@danmaku")
+    if status and not vflag then
+            mp.commandv("vf", "append", "@danmaku:lavfi=[fps=fps=60:round=down]")
+            mp.add_key_binding("Ctrl+d", "@danmaku", function()
+                mp.commandv("vf", "toggle", "@danmaku:lavfi=[fps=fps=60:round=down]")
+            end)
+    elseif not status and vflag then
+            mp.commandv("vf", "remove", "@danmaku")
+            mp.remove_key_binding("@danmaku")
+    end
 end)
