@@ -39,6 +39,20 @@ mp.add_key_binding("/", "picture-in-picture", function()
 end)
 ----------------------------------------------------------------------------------------------
 ----------------------------------------------------------------------------------------------
+mp.add_key_binding("Ctrl+x", "sub-filter", function()
+    require 'mp.input'.get({
+        prompt = "Subtitle blocked words：",
+        submit = function(value)
+            if value == nil or value == "" then
+                mp.commandv("set", "sub-filter-jsre", "[]")
+                return
+            end
+            local pattern = value:gsub("[().%+*?^$%[%]{}]", "%%%1")
+            mp.commandv("set", "sub-filter-jsre", pattern)
+        end
+    })
+end)
+
 --[[
 -- the coroutine will yield after the clickdown event and resume after the clickup event
 local main = coroutine.wrap(function()
