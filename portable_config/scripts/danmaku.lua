@@ -24,22 +24,18 @@ local ass_path = mp.command_native({"expand-path", "~~/cache/danmaku.ass"})
 
 -- UTF8字符串长度计算（中文=1，英文=0.5）
 local function utf8_len(s)
-    if not s then return 0 end
     local len = 0
-    for char in string.gmatch(s, "[%z\1-\127\194-\244][\128-\191]*") do
-        len = len + (#char > 1 and 1 or 0.5)
-    end
-    return len
+    for i=1,#s do len=len+(string.byte(s,i)>=0xC0 and 2 or 1) end
+    return len/2
 end
 
 -- 秒数转ASS时间格式 HH:MM:SS.cc
 local function sec_to_ass_time(seconds)
-    seconds = math.max(0, seconds)
-    local total = math.floor(seconds * 100)
-    local h = math.floor(total / 360000)
-    local m = math.floor(total / 6000) % 60
-    local s = math.floor(total / 100) % 60
-    local cs = total % 100
+    local total = math.floor(math.max(seconds, 0)*100)
+    local h = math.floor(total/360000)
+    local m = math.floor(total/6000)%60
+    local s = math.floor(total/100)%60
+    local cs = total%100
     return string.format("%02d:%02d:%02d.%02d", h, m, s, cs)
 end
 
@@ -57,7 +53,7 @@ local function xml_unescape(s)
                   :gsub("&gt;", ">")
                   :gsub("&quot;", "\"")
                   :gsub("&apos;", "'")
-                  :gsub("[{}]", "\\%1")
+                  :gsub("[{\\}]", "\\%1")
 end
 
 -- 解析B站弹幕属性（官方标准格式）
@@ -104,10 +100,11 @@ local function alloc_track(start_time, duration, max_tracks)
 end
 
 -- 生成滚动弹幕移动动画
-local function generate_move_effect(danmaku_text, attrs)
+local function generate_move_effect(danmaku_text, attrs, fps)
     local text_len = utf8_len(danmaku_text)
     local text_width = text_len*attrs.font_size*0.85
-    local move_duration = (1920+text_width)/(120+text_len)
+    local speed  = fps<60 and 4*fps or 2*fps
+    local move_duration = (1920+text_width)/(speed+text_len)
 
     local track_height = attrs.font_size + 2
     local max_tracks = math.min(math.floor(1080/track_height), 18)
@@ -117,7 +114,7 @@ local function generate_move_effect(danmaku_text, attrs)
     return {string.format("\\move(1920,%d,-%d,%d)", y_pos, text_width, y_pos)}, move_duration
 end
 
-local function danmaku_to_ass(danmaku_text, attrs)
+local function danmaku_to_ass(danmaku_text, attrs, fps)
     if not danmaku_text then return "" end
     local color = convert_bili_color_to_ass(attrs.color)
     local style = "Default"
@@ -128,7 +125,7 @@ local function danmaku_to_ass(danmaku_text, attrs)
     elseif attrs.mode == 4 then
         style = "Bottom"
     else
-        effect, attrs.duration = generate_move_effect(danmaku_text, attrs)
+        effect, attrs.duration = generate_move_effect(danmaku_text, attrs, fps)
     end
 
     if color ~= "&HFFFFFF" then table.insert(effect, 1,"\\1c"..color ) end
@@ -169,7 +166,7 @@ local function process_danmaku(data)
     end)
     
     for _, dm in ipairs(danmaku) do
-        local ass_line = danmaku_to_ass(dm.text, dm.attrs)
+        local ass_line = danmaku_to_ass(dm.text, dm.attrs, data.fps)
         if ass_line ~= "" then table.insert(ass_content, ass_line) end
     end
 
@@ -183,16 +180,16 @@ local function process_danmaku(data)
     mp.commandv("sub-add", ass_path, "auto")
     mp.set_property_number("secondary-sid", 1)
     mp.msg.info("Total "..#danmaku.." danmakus loaded.")
-    return data.fps < 60
+    return data.fps < 60 and 2*data.fps
 end
 
 mp.add_hook("on_preloaded", 50, function()
     local status = process_danmaku(get_danmaku_info())
     local vflag = mp.get_property("vf"):match("@danmaku")
     if status and not vflag then
-            mp.commandv("vf", "append", "@danmaku:lavfi=[fps=fps=60:round=down]")
+            mp.commandv("vf", "add", ("@danmaku:lavfi=[fps=fps=%d:round=down]"):format(status))
             mp.add_key_binding("Ctrl+d", "@danmaku", function()
-                mp.commandv("vf", "toggle", "@danmaku:lavfi=[fps=fps=60:round=down]")
+                mp.commandv("vf", "toggle", "@danmaku")
             end)
     elseif not status and vflag then
             mp.commandv("vf", "remove", "@danmaku")
