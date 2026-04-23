@@ -22,14 +22,14 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 -- 生成的ASS文件保存路径（MPV缓存目录）
 local ass_path = mp.command_native({"expand-path", "~~/cache/danmaku.ass"})
 
--- UTF8字符串长度计算（中文=1，英文=0.5）
+-- 计算UTF8长度（中文=1，英文=0.5，精准计算弹幕宽度）
 local function utf8_len(s)
     local len = 0
     for i=1,#s do len=len+(string.byte(s,i)>=0xC0 and 2 or 1) end
     return len/2
 end
 
--- 秒数转ASS时间格式 HH:MM:SS.cc
+-- 秒数转ASS时间格式（HH:MM:SS.cc，字幕时间标准）
 local function sec_to_ass_time(seconds)
     local total = math.floor(math.max(seconds, 0)*100)
     local h = math.floor(total/360000)
@@ -39,14 +39,14 @@ local function sec_to_ass_time(seconds)
     return string.format("%02d:%02d:%02d.%02d", h, m, s, cs)
 end
 
--- B站颜色转ASS颜色（RRGGBB → BBGGRR）
+-- B站颜色转ASS颜色（B站：RRGGBB → ASS：BBGGRR，颜色格式反转）
 local function convert_bili_color_to_ass(color)
     color = tonumber(color) or 0xFFFFFF
     local hex = string.format("%06X", color)
     return "&H"..hex:sub(5,6)..hex:sub(3,4)..hex:sub(1,2)
 end
 
--- XML转义字符还原 + ASS大括号转义
+-- XML转义字符还原（&lt; → < 等）
 local function xml_unescape(s)
     return s and s:gsub("&amp;", "&")
                   :gsub("&lt;", "<")
@@ -77,7 +77,7 @@ local function parse_danmaku_attr(attr_str)
     return attrs
 end
 
--- 解析XML弹幕数据
+-- 正则提取XML中所有<d>标签的弹幕数据
 local function parse_xml_danmaku(xml_content)
     local danmaku = {}
     local pattern = '<d[^>]+p="([^"]-)"[^>]*>(.-)</d>'
@@ -99,7 +99,7 @@ local function alloc_track(start_time, duration, max_tracks)
     return best_track - 1
 end
 
--- 生成滚动弹幕移动动画
+-- 生成滚动弹幕移动动画（从右向左滑动）
 local function generate_move_effect(danmaku_text, attrs, fps)
     local text_len = utf8_len(danmaku_text)
     local text_width = text_len*attrs.font_size*0.85
@@ -114,6 +114,7 @@ local function generate_move_effect(danmaku_text, attrs, fps)
     return {string.format("\\move(1920,%d,-%d,%d)", y_pos, text_width, y_pos)}, move_duration
 end
 
+-- 单条弹幕转换为ASS字幕行
 local function danmaku_to_ass(danmaku_text, attrs, fps)
     if not danmaku_text then return "" end
     local color = convert_bili_color_to_ass(attrs.color)
@@ -138,7 +139,7 @@ local function danmaku_to_ass(danmaku_text, attrs, fps)
         style, effect, danmaku_text)
 end
 
--- 获取B站弹幕URL、视频帧率、分辨率
+-- 从ytdl解析结果中获取弹幕URL和视频帧率
 local function get_danmaku_info()
     local result = mp.get_property_native("user-data/mpv/ytdl/json-subprocess-result") or {}
     local data = require 'mp.utils'.parse_json(result.stdout or "") or {}
