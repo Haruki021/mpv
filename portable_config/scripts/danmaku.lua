@@ -2,11 +2,9 @@
 local ASS_HEADER = [[[Script Info]
 Title: Bilibili Danmaku to ASS
 ScriptType: v4.00+
-Collisions: Normal
 PlayResX: 1920
 PlayResY: 1080
-Timer: 100.0000
-WrapStyle: 2
+WrapStyle: 0
 ScaledBorderAndShadow: yes
 
 [V4+ Styles]
@@ -22,14 +20,17 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 -- 生成的ASS文件保存路径（MPV缓存目录）
 local ass_path = mp.command_native({"expand-path", "~~/cache/danmaku.ass"})
 
--- 计算UTF8长度（中文=1，英文=0.5，精准计算弹幕宽度）
+-- UTF8字符串长度计算（中文=1，英文=0.5）
 local function utf8_len(s)
     local len = 0
-    for i=1,#s do len=len+(string.byte(s,i)>=0xC0 and 2 or 1) end
+    for i = 1, #s do
+        local char = string.byte(s,i)
+        len=len+(char<=0x7F and 1 or char>=0xC0 and 2)
+    end
     return len/2
 end
 
--- 秒数转ASS时间格式（HH:MM:SS.cc，字幕时间标准）
+-- 秒数转ASS时间格式 HH:MM:SS.cc
 local function sec_to_ass_time(seconds)
     local total = math.floor(math.max(seconds, 0)*100)
     local h = math.floor(total/360000)
@@ -39,7 +40,7 @@ local function sec_to_ass_time(seconds)
     return string.format("%02d:%02d:%02d.%02d", h, m, s, cs)
 end
 
--- B站颜色转ASS颜色（B站：RRGGBB → ASS：BBGGRR，颜色格式反转）
+-- B站颜色转ASS颜色（RRGGBB → BBGGRR）
 local function convert_bili_color_to_ass(color)
     color = tonumber(color) or 0xFFFFFF
     local hex = string.format("%06X", color)
@@ -77,7 +78,7 @@ local function parse_danmaku_attr(attr_str)
     return attrs
 end
 
--- 正则提取XML中所有<d>标签的弹幕数据
+-- 正则解析XML弹幕数据
 local function parse_xml_danmaku(xml_content)
     local danmaku = {}
     local pattern = '<d[^>]+p="([^"]-)"[^>]*>(.-)</d>'
@@ -102,9 +103,9 @@ end
 -- 生成滚动弹幕移动动画（从右向左滑动）
 local function generate_move_effect(danmaku_text, attrs, fps)
     local text_len = utf8_len(danmaku_text)
-    local text_width = text_len*attrs.font_size*0.85
+    local text_width = text_len*attrs.font_size
     local speed  = fps<60 and 4*fps or 2*fps
-    local move_duration = (1920+text_width)/(speed+text_len)
+    local move_duration = (1920+text_width)/(speed+math.random(text_len))
 
     local track_height = attrs.font_size + 2
     local max_tracks = math.min(math.floor(1080/track_height), 18)
@@ -114,7 +115,7 @@ local function generate_move_effect(danmaku_text, attrs, fps)
     return {string.format("\\move(1920,%d,-%d,%d)", y_pos, text_width, y_pos)}, move_duration
 end
 
--- 单条弹幕转换为ASS字幕行
+-- 弹幕行转换为ASS字幕
 local function danmaku_to_ass(danmaku_text, attrs, fps)
     if not danmaku_text then return "" end
     local color = convert_bili_color_to_ass(attrs.color)
@@ -139,8 +140,8 @@ local function danmaku_to_ass(danmaku_text, attrs, fps)
         style, effect, danmaku_text)
 end
 
--- 从ytdl解析结果中获取弹幕URL和视频帧率
-local function get_danmaku_info()
+-- 获取B站弹幕URL、视频帧率
+local function danmaku_info()
     local result = mp.get_property_native("user-data/mpv/ytdl/json-subprocess-result") or {}
     local data = require 'mp.utils'.parse_json(result.stdout or "") or {}
     return {
@@ -184,16 +185,14 @@ local function process_danmaku(data)
     return data.fps < 60 and 2*data.fps
 end
 
+local function danmaku_vfilter(status, filter)
+    if status then mp.commandv("vf", "add", ("@danmaku:lavfi=[fps=fps=%d:round=down]"):format(status)) end
+    if filter then mp.commandv("vf", "remove", "@danmaku") mp.remove_key_binding("@danmaku") end
+    if status and not filter then mp.add_key_binding("Ctrl+d", "@danmaku", function() mp.commandv("vf", "toggle", "@danmaku") end) end
+end
+
 mp.add_hook("on_preloaded", 50, function()
-    local status = process_danmaku(get_danmaku_info())
-    local vflag = mp.get_property("vf"):match("@danmaku")
-    if status and not vflag then
-            mp.commandv("vf", "add", ("@danmaku:lavfi=[fps=fps=%d:round=down]"):format(status))
-            mp.add_key_binding("Ctrl+d", "@danmaku", function()
-                mp.commandv("vf", "toggle", "@danmaku")
-            end)
-    elseif not status and vflag then
-            mp.commandv("vf", "remove", "@danmaku")
-            mp.remove_key_binding("@danmaku")
-    end
+    local status = process_danmaku(danmaku_info())
+    local filter = mp.get_property("vf"):match("@danmaku")
+    danmaku_vfilter(status, filter)
 end)
