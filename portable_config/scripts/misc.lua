@@ -22,6 +22,17 @@ mp.observe_property("window-minimized", "bool", function(name, value)
 end)
 ---------------------------------------------------------------------------------------------
 ---------------------------------------------------------------------------------------------
+mp.observe_property("current-tracks/video/image", "string", function(name, value)
+    if value=="no" and mp.get_property_native("geometry")=="90%x90%" then
+        mp.set_property_native("geometry", "50%:50%")
+        mp.commandv("no-osd", "change-list", "script-opts", "append", "osc-layout=floating")
+    elseif value=="yes" and not mp.get_property_bool("current-tracks/video/album") then
+        mp.set_property_native("geometry", "90%x90%")
+        mp.commandv("no-osd", "change-list", "script-opts", "append", "osc-layout=slimbottombar")
+    end
+end)
+---------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------
 mp.add_key_binding("/", "picture-in-picture", function()
     local list = {fullscreen=false, border=false, ontop=true, geometry="20%x20%-50-50"}
     if mp.get_property_native("geometry")==list.geometry then
@@ -39,7 +50,7 @@ mp.add_key_binding("/", "picture-in-picture", function()
 end)
 ----------------------------------------------------------------------------------------------
 ----------------------------------------------------------------------------------------------
-mp.add_key_binding("Ctrl+x", "sub-filter", function()
+mp.add_key_binding("x", "sub-filter", function()
     require 'mp.input'.get({
         prompt = "Subtitle blocked words：",
         submit = function(value)
