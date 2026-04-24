@@ -22,10 +22,9 @@ local ass_path = mp.command_native({"expand-path", "~~/cache/danmaku.ass"})
 
 -- UTF8字符串长度计算（中文=1，英文=0.5）
 local function utf8_len(s)
-    local len = 0
-    for i = 1, #s do
-        local char = string.byte(s,i)
-        len=len+(char<=0x7F and 1 or char>=0xC0 and 2)
+    local len, char = 0, {string.byte(s, 1, -1)}
+    for i = 1, #char do
+        len = len + (char[i] >= 0xC0 and 2 or char[i] <= 0x7F)
     end
     return len/2
 end
