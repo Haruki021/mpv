@@ -20,13 +20,13 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 -- 生成的ASS文件保存路径（MPV缓存目录）
 local ass_path = mp.command_native({"expand-path", "~~/cache/danmaku.ass"})
 
--- UTF8字符串长度计算（中文=1，英文=0.5）
+-- UTF8字符串长度计算（半角=1，全角=2）
 local function utf8_len(s)
     local len, char = 0, {string.byte(s, 1, -1)}
     for i = 1, #char do
         len = len + (char[i] >= 0xC0 and 2 or char[i] <= 0x7F)
     end
-    return len/2
+    return len
 end
 
 -- 秒数转ASS时间格式 HH:MM:SS.cc
@@ -43,17 +43,14 @@ end
 local function convert_bili_color_to_ass(color)
     color = tonumber(color) or 0xFFFFFF
     local hex = string.format("%06X", color)
-    return "&H"..hex:sub(5,6)..hex:sub(3,4)..hex:sub(1,2)
+    return string.format("&H%s%s%s", hex:sub(5,6), hex:sub(3,4), hex:sub(1,2))
 end
 
 -- XML转义字符还原（&lt; → < 等）
+local xml_pattern = {["&lt;"]="<",["&gt;"]=">",["&amp;"]="&",["&quot;"]='"',["&apos;"]="'"}
 local function xml_unescape(s)
-    return s and s:gsub("&amp;", "&")
-                  :gsub("&lt;", "<")
-                  :gsub("&gt;", ">")
-                  :gsub("&quot;", "\"")
-                  :gsub("&apos;", "'")
-                  :gsub("[{\\}]", "\\%1")
+    return s and s:gsub("(&.-;)", xml_pattern)
+                  :gsub("([{\\}])", "\\%1")
 end
 
 -- 解析B站弹幕属性（官方标准格式）
@@ -63,26 +60,18 @@ local function parse_danmaku_attr(attr_str)
     local parts = {}
     for p in attr_str:gmatch("[^,]+") do table.insert(parts, p) end
 
-    -- 逐字段解析（严格对应B站官方顺序）
     attrs.start_time = tonumber(parts[1]) or 0
     attrs.mode = tonumber(parts[2]) or 1
-    attrs.font_size = math.max(tonumber(parts[3]) or 40, 40)  -- 不小于40
+    attrs.font_size = math.max(tonumber(parts[3]) or 40, 40)
     attrs.color = tonumber(parts[4]) or 0xFFFFFF
-    attrs.send_time = tonumber(parts[5]) or 0
-    attrs.pool_type = tonumber(parts[6]) or 0
-    attrs.user_id = parts[7] or ""
-    attrs.row_id = parts[8] or ""
-    attrs.weight = tonumber(parts[9]) or 0
-
     return attrs
 end
 
 -- 正则解析XML弹幕数据
 local function parse_xml_danmaku(xml_content)
     local danmaku = {}
-    local pattern = '<d[^>]+p="([^"]-)"[^>]*>(.-)</d>'
-    for p_attr, text in string.gmatch(xml_content, pattern) do
-        table.insert(danmaku, {attrs = parse_danmaku_attr(p_attr), text = xml_unescape(text)})
+    for p_attr, text in string.gmatch(xml_content, '<d[^>]+p="([^"]-)"[^>]*>(.-)</d>') do
+        table.insert(danmaku, {attrs=parse_danmaku_attr(p_attr), text=xml_unescape(text)})
     end
     return danmaku
 end
@@ -102,7 +91,7 @@ end
 -- 生成滚动弹幕移动动画（从右向左滑动）
 local function generate_move_effect(danmaku_text, attrs, fps)
     local text_len = utf8_len(danmaku_text)
-    local text_width = text_len*attrs.font_size
+    local text_width = text_len*attrs.font_size/2
     local speed  = fps<60 and 4*fps or 2*fps
     local move_duration = (1920+text_width)/(speed+math.random(text_len))
 
@@ -131,7 +120,7 @@ local function danmaku_to_ass(danmaku_text, attrs, fps)
 
     if color ~= "&HFFFFFF" then table.insert(effect, 1,"\\1c"..color ) end
     if attrs.font_size ~= 40 then table.insert(effect, 1, "\\fs"..attrs.font_size) end
-    effect = next(effect) and "{" .. table.concat(effect) .. "}" or ""
+    effect = "{" .. table.concat(effect) .. "}"
 
     return string.format("Dialogue: 0,%s,%s,%s,,0,0,0,,%s%s",
         sec_to_ass_time(attrs.start_time),
@@ -154,7 +143,7 @@ local function process_danmaku(data)
     local userAgent = mp.get_property("file-local-options/user-agent", "")
     local res = mp.command_native({
         name = "subprocess", capture_stdout = true, capture_stderr = true,
-        args = {"curl", "-fs", data.url, "-A", userAgent, "--compressed"}})
+        args = {"curl", "-fsL", data.url, "-A", userAgent, "--compressed"}})
 
     if not res.stdout or res.stderr ~= "" then return false end
 
@@ -192,6 +181,6 @@ end
 
 mp.add_hook("on_preloaded", 50, function()
     local status = process_danmaku(danmaku_info())
-    local filter = mp.get_property("vf"):match("@danmaku")
+    local filter = mp.get_property("vf", ""):match("@danmaku")
     danmaku_vfilter(status, filter)
 end)
