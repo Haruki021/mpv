@@ -95,7 +95,7 @@ local function generate_move_effect(danmaku_text, attrs, fps)
     local speed  = fps<60 and 4*fps or 2*fps
     local move_duration = (1920+text_width)/(speed+math.random(text_len))
 
-    local track_height = attrs.font_size + 2
+    local track_height = math.min(attrs.font_size, 40)+2
     local max_tracks = math.floor(810/track_height)
     local track = alloc_track(attrs.start_time, move_duration, max_tracks)
     local y_pos = track * track_height
