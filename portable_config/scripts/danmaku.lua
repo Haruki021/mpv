@@ -24,7 +24,8 @@ local ass_path = mp.command_native({"expand-path", "~~/cache/danmaku.ass"})
 local function utf8_len(s)
     local len, char = 0, {string.byte(s, 1, -1)}
     for i = 1, #char do
-        len = len + (char[i] >= 0xC0 and 2 or char[i] <= 0x7F)
+        if char[i] >= 0xC0 then len = len + 2 end
+        if char[i] <= 0x7F then len = len + 1 end
     end
     return len
 end
@@ -47,10 +48,9 @@ local function convert_bili_color_to_ass(color)
 end
 
 -- XML转义字符还原（&lt; → < 等）
-local xml_pattern = {["&lt;"]="<",["&gt;"]=">",["&amp;"]="&",["&quot;"]='"',["&apos;"]="'"}
 local function xml_unescape(s)
-    return s and s:gsub("(&.-;)", xml_pattern)
-                  :gsub("([{\\}])", "\\%1")
+    return s and s:gsub("&(lt|gt|quot|apos|amp|);", {lt="<",gt=">",quot='"',apos="'",amp="&"})
+                  :gsub("[{}]", "\\%0")
 end
 
 -- 解析B站弹幕属性（官方标准格式）
@@ -91,11 +91,11 @@ end
 -- 生成滚动弹幕移动动画（从右向左滑动）
 local function generate_move_effect(danmaku_text, attrs, fps)
     local text_len = utf8_len(danmaku_text)
-    local text_width = text_len*attrs.font_size/2
+    local text_width = text_len*attrs.font_size*0.4
     local speed  = fps<60 and 4*fps or 2*fps
-    local move_duration = (1920+text_width)/(speed+math.random(text_len))
+    local move_duration = (1920+text_width)/(speed+math.random(20))
 
-    local track_height = attrs.font_size + 2
+    local track_height = attrs.font_size+2
     local max_tracks = math.min(math.floor(1080/track_height), 18)
     local track = alloc_track(attrs.start_time, move_duration, max_tracks)
     local y_pos = track * track_height
@@ -174,9 +174,18 @@ local function process_danmaku(data)
 end
 
 local function danmaku_vfilter(status, filter)
-    if status then mp.commandv("vf", "add", ("@danmaku:lavfi=[fps=fps=%d:round=down]"):format(status)) end
-    if filter then mp.commandv("vf", "remove", "@danmaku") mp.remove_key_binding("@danmaku") end
-    if status and not filter then mp.add_key_binding("Ctrl+d", "@danmaku", function() mp.commandv("vf", "toggle", "@danmaku") end) end
+    if status then
+        mp.commandv("vf", "add", ("@danmaku:lavfi=[fps=fps=%d:round=down]"):format(status))
+    end
+    if not status and filter then
+        mp.commandv("vf", "remove", "@danmaku")
+        mp.remove_key_binding("@danmaku")
+    end
+    if status and not filter then
+        mp.add_key_binding("Ctrl+d", "@danmaku", function()
+            mp.commandv("vf", "toggle", "@danmaku")
+        end)
+    end
 end
 
 mp.add_hook("on_preloaded", 50, function()
