@@ -9,9 +9,9 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Microsoft YaHei,50,&H33FFFFFF,&H000000FF,&H33000000,&H00000000,0,0,0,0,100,100,0,0,1,1,0,7,0,0,0,1
-Style: Top,Microsoft YaHei,50,&H33FFFFFF,&H000000FF,&H33000000,&H00000000,0,0,0,0,100,100,0,0,1,1,0,8,0,0,0,1
-Style: Bottom,Microsoft YaHei,50,&H33FFFFFF,&H00000000,&H33000000,&H00000000,0,0,0,0,100,100,0,0,1,1,0,2,0,0,0,1
+Style: Default,Microsoft YaHei,40,&H33FFFFFF,&H000000FF,&H33000000,&H00000000,0,0,0,0,100,100,0,0,1,1,0,7,0,0,0,1
+Style: Top,Microsoft YaHei,40,&H33FFFFFF,&H000000FF,&H33000000,&H00000000,0,0,0,0,100,100,0,0,1,1,0,8,0,0,0,1
+Style: Bottom,Microsoft YaHei,40,&H33FFFFFF,&H00000000,&H33000000,&H00000000,0,0,0,0,100,100,0,0,1,1,0,2,0,0,0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -49,20 +49,20 @@ end
 
 -- XML转义字符还原（&lt; → < 等）
 local function xml_unescape(s)
-    return s and s:gsub("&(lt|gt|quot|apos|amp|);", {lt="<",gt=">",quot='"',apos="'",amp="&"})
+    return s and s:gsub("&(lt|gt|quot|apos|amp);", {lt="<",gt=">",quot='"',apos="'",amp="&"})
                   :gsub("[{}]", "\\%0")
 end
 
 -- 解析B站弹幕属性（官方标准格式）
 local function parse_danmaku_attr(attr_str)
-    local attrs = {start_time = 0, mode = 1, font_size = 40, color = 0xFFFFFF, duration = 3}
+    local attrs = {start = 0, mode = 1, fs = 40, color = 0xFFFFFF, duration = 3}
     if not attr_str then return attrs end
     local parts = {}
     for p in attr_str:gmatch("[^,]+") do table.insert(parts, p) end
 
-    attrs.start_time = tonumber(parts[1]) or 0
+    attrs.start = tonumber(parts[1]) or 0
     attrs.mode = tonumber(parts[2]) or 1
-    attrs.font_size = tonumber(parts[3])*2
+    attrs.fs = math.min((tonumber(parts[3]) or 25)*2, 40)
     attrs.color = tonumber(parts[4]) or 0xFFFFFF
     return attrs
 end
@@ -70,62 +70,61 @@ end
 -- 正则解析XML弹幕数据
 local function parse_xml_danmaku(xml_content)
     local danmaku = {}
-    for p_attr, text in string.gmatch(xml_content, '<d[^>]+p="([^"]-)"[^>]*>(.-)</d>') do
+    for p_attr, text in string.gmatch(xml_content, '<d[^>]*p="([^"]*)"[^>]*>(.-[^%s%c].-)</d>') do
         table.insert(danmaku, {attrs=parse_danmaku_attr(p_attr), text=xml_unescape(text)})
     end
     return danmaku
 end
 
 -- 弹幕轨道管理：防止弹幕重叠，自动分配轨道
-local track_pool = {}
-local function alloc_track(start_time, duration, max_tracks)
+local tracks = {}
+local function alloc_track(start, duration, max_tracks)
     local best_track, min_time = 1, 1/0
     for i = 1, max_tracks do
-        if not track_pool[i] or track_pool[i] <= start_time then best_track=i break end
-        if track_pool[i] < min_time then min_time=track_pool[i] best_track=i end
+        if not tracks[i] or tracks[i] <= start then best_track=i break end
+        if tracks[i] < min_time then min_time=tracks[i] best_track=i end
     end
-    track_pool[best_track] = start_time + duration
-    return best_track - 1
+    tracks[best_track] = start+duration
+    return best_track-1
 end
 
 -- 生成滚动弹幕移动动画（从右向左滑动）
-local function generate_move_effect(danmaku_text, attrs, fps)
-    local text_len = utf8_len(danmaku_text)
-    local text_width = text_len*attrs.font_size*0.4
+local function generate_move_effect(danmaku, fps)
+    local text_len = utf8_len(danmaku.text)
+    local text_width = text_len*danmaku.attrs.fs*0.45
     local speed  = fps<60 and 4*fps or 2*fps
     local move_duration = (1920+text_width)/(speed+math.random(text_len))
 
-    local track_height = math.min(attrs.font_size, 40)+2
+    local track_height = danmaku.attrs.fs+2
     local max_tracks = math.floor(810/track_height)
-    local track = alloc_track(attrs.start_time, move_duration, max_tracks)
-    local y_pos = track * track_height
-    
+    local track = alloc_track(danmaku.attrs.start, move_duration, max_tracks)
+    local y_pos = track*track_height
+
     return {string.format("\\move(1920,%d,-%d,%d)", y_pos, text_width, y_pos)}, move_duration
 end
 
 -- 弹幕行转换为ASS字幕
-local function danmaku_to_ass(danmaku_text, attrs, fps)
-    if not danmaku_text then return "" end
-    local color = convert_bili_color_to_ass(attrs.color)
+local function danmaku_to_ass(danmaku, fps)
+    local color = convert_bili_color_to_ass(danmaku.attrs.color)
     local style = "Default"
     local effect = {}
 
-    if attrs.mode == 5 then
+    if danmaku.attrs.mode == 5 then
         style = "Top"
-    elseif attrs.mode == 4 then
+    elseif danmaku.attrs.mode == 4 then
         style = "Bottom"
     else
-        effect, attrs.duration = generate_move_effect(danmaku_text, attrs, fps)
+        effect, danmaku.attrs.duration = generate_move_effect(danmaku, fps)
     end
 
     if color ~= "&HFFFFFF" then table.insert(effect, 1,"\\1c"..color ) end
-    if attrs.font_size ~= 50 then table.insert(effect, 1, "\\fs"..attrs.font_size) end
+    if danmaku.attrs.fs ~= 40 then table.insert(effect, 1, "\\fs"..danmaku.attrs.fs) end
     effect = next(effect) and "{" .. table.concat(effect) .. "}" or ""
 
     return string.format("Dialogue: 0,%s,%s,%s,,0,0,0,,%s%s",
-        sec_to_ass_time(attrs.start_time),
-        sec_to_ass_time(attrs.start_time + attrs.duration),
-        style, effect, danmaku_text)
+        sec_to_ass_time(danmaku.attrs.start),
+        sec_to_ass_time(danmaku.attrs.start+danmaku.attrs.duration),
+        style, effect, danmaku.text)
 end
 
 -- 获取B站弹幕URL、视频帧率
@@ -143,21 +142,20 @@ local function process_danmaku(data)
     local userAgent = mp.get_property("file-local-options/user-agent", "")
     local res = mp.command_native({
         name = "subprocess", capture_stdout = true, capture_stderr = true,
-        args = {"curl", "-fsL", data.url, "-A", userAgent, "--compressed"}})
+        args = {"curl", "-fs", data.url, "-A", userAgent, "--compressed"}})
 
     if not res.stdout or res.stderr ~= "" then return false end
 
     local danmaku = parse_xml_danmaku(res.stdout)
     local ass_content = {ASS_HEADER}
-    track_pool = {}
+    tracks = {}
 
     table.sort(danmaku, function(a, b)
-        return a.attrs.start_time < b.attrs.start_time
+        return a.attrs.start < b.attrs.start
     end)
-    
+
     for _, dm in ipairs(danmaku) do
-        local ass_line = danmaku_to_ass(dm.text, dm.attrs, data.fps)
-        if ass_line ~= "" then table.insert(ass_content, ass_line) end
+        table.insert(ass_content, danmaku_to_ass(dm, data.fps))
     end
 
     local ass_file = io.open(ass_path, "w")
