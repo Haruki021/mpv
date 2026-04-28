@@ -32,7 +32,7 @@ end
 
 -- 秒数转ASS时间格式 HH:MM:SS.cc
 local function sec_to_ass_time(seconds)
-    local total = math.floor(math.max(seconds, 0)*100)
+    local total = math.floor(seconds*100)
     local h = math.floor(total/360000)
     local m = math.floor(total/6000)%60
     local s = math.floor(total/100)%60
@@ -49,14 +49,13 @@ end
 
 -- XML转义字符还原（&lt; → < 等）
 local function xml_unescape(s)
-    return s and s:gsub("&(lt|gt|quot|apos|amp);", {lt="<",gt=">",quot='"',apos="'",amp="&"})
-                  :gsub("[{}]", "\\%0")
+    return s:gsub("&(lt|gt|quot|apos|amp);", {lt="<",gt=">",quot='"',apos="'",amp="&"})
+            :gsub("[{}]", "\\%0")
 end
 
 -- 解析B站弹幕属性（官方标准格式）
 local function parse_danmaku_attr(attr_str)
     local attrs = {start = 0, mode = 1, fs = 40, color = 0xFFFFFF, duration = 3}
-    if not attr_str then return attrs end
     local parts = {}
     for p in attr_str:gmatch("[^,]+") do table.insert(parts, p) end
 
@@ -70,7 +69,7 @@ end
 -- 正则解析XML弹幕数据
 local function parse_xml_danmaku(xml_content)
     local danmaku = {}
-    for p_attr, text in string.gmatch(xml_content, '<d[^>]*p="([^"]*)"[^>]*>(.-[^%s%c].-)</d>') do
+    for p_attr, text in string.gmatch(xml_content, '<d%s+p="([^"]*)"[^>]*>%s*(.-)%s*</d>') do
         table.insert(danmaku, {attrs=parse_danmaku_attr(p_attr), text=xml_unescape(text)})
     end
     return danmaku
@@ -79,7 +78,7 @@ end
 -- 弹幕轨道管理：防止弹幕重叠，自动分配轨道
 local tracks = {}
 local function alloc_track(start, duration, max_tracks)
-    local best_track, min_time = 1, 1/0
+    local best_track, min_time = 1, math.huge
     for i = 1, max_tracks do
         if not tracks[i] or tracks[i] <= start then best_track=i break end
         if tracks[i] < min_time then min_time=tracks[i] best_track=i end
@@ -171,6 +170,7 @@ local function process_danmaku(data)
     return data.fps < 60 and 2*data.fps
 end
 
+-- 帧率滤镜控制（优化弹幕流畅度）
 local function danmaku_vfilter(status, filter)
     if status then
         mp.commandv("vf", "add", ("@danmaku:lavfi=[fps=fps=%d:round=down]"):format(status))
