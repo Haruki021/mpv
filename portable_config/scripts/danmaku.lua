@@ -49,8 +49,8 @@ end
 
 -- XML转义字符还原（&lt; → < 等）
 local function xml_unescape(s)
-    return s:gsub("&(lt|gt|quot|apos|amp);", {lt="<",gt=">",quot='"',apos="'",amp="&"})
-            :gsub("[{}]", "\\%0")
+    return s:gsub("&(lt|gt|quot|apos|amp);|({|})",
+        {lt="<",gt=">",quot='"',apos="'",amp="&",["{"]="\\{",["}"]="\\}"})
 end
 
 -- 解析B站弹幕属性（官方标准格式）
@@ -76,8 +76,7 @@ local function parse_xml_danmaku(xml_content)
 end
 
 -- 弹幕轨道管理：防止弹幕重叠，自动分配轨道
-local tracks = {}
-local function alloc_track(dm, lim, text_dur)
+local function alloc_track(dm, lim, text_dur, tracks)
     local sel, tmp, min = nil, 1, math.huge
     for i = 1, lim do
         if not tracks[i] or tracks[i][1] <= dm.attrs.start then sel=i break end
@@ -89,23 +88,23 @@ local function alloc_track(dm, lim, text_dur)
 end
 
 -- 生成滚动弹幕移动动画（从右向左滑动）
-local function generate_move_effect(dm, fps)
+local function generate_move_effect(dm, fps, tracks)
     local len = utf8_len(dm.text)
     local width = len*dm.attrs.fs/2
     local speed  = fps<60 and 4*fps or 2*fps
     local text_dur = width/speed
-    dm.attrs.dur = (1920+width)/speed
+    dm.attrs.dur = (1920 + width)/speed
 
     local dh = dm.attrs.fs+1
     local lim = math.floor(810/dh)
-    local track = alloc_track(dm, lim, text_dur)
+    local track = alloc_track(dm, lim, text_dur, tracks)
     local y_pos = track*dh
 
     return {string.format("\\move(1920,%d,-%d,%d)", y_pos, width, y_pos)}
 end
 
 -- 弹幕行转换为ASS字幕
-local function danmaku_to_ass(dm, fps)
+local function danmaku_to_ass(dm, fps, tracks)
     local color = convert_bili_color_to_ass(dm.attrs.color)
     local style = "Default"
     local effect = {}
@@ -115,7 +114,7 @@ local function danmaku_to_ass(dm, fps)
     elseif dm.attrs.mode == 4 then
         style = "Bottom"
     else
-        effect = generate_move_effect(dm, fps)
+        effect = generate_move_effect(dm, fps, tracks)
     end
 
     if color ~= "&HFFFFFF" then table.insert(effect, 1,"\\1c"..color ) end
@@ -149,14 +148,14 @@ local function process_danmaku(data)
 
     local danmaku = parse_xml_danmaku(res.stdout)
     local ass_content = {ASS_HEADER}
-    tracks = {}
+    local tracks = {}
 
     table.sort(danmaku, function(a, b)
         return a.attrs.start < b.attrs.start
     end)
 
     for _, dm in ipairs(danmaku) do
-        table.insert(ass_content, danmaku_to_ass(dm, data.fps))
+        table.insert(ass_content, danmaku_to_ass(dm, data.fps, tracks))
     end
 
     local ass_file = io.open(ass_path, "w")
