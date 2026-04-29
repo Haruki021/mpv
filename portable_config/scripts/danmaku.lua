@@ -91,8 +91,8 @@ end
 local function generate_move_effect(dm, fps)
     local text_len = utf8_len(dm.text)
     local text_width = text_len*dm.attrs.fs/2
-    local speed  = fps<60 and 5*fps or 3*fps
-    dm.attrs.duration = (1920+text_width)/(speed+math.floor(text_len/8))
+    local speed  = fps<60 and 4*fps or 2*fps
+    dm.attrs.duration = (1920+text_width)/speed
 
     local track_height = dm.attrs.fs+1
     local max_tracks = math.floor(810/track_height)
