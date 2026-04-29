@@ -1,5 +1,4 @@
 local utils = require 'mp.utils'
-
 local resume_data_path = mp.command_native({"expand-path", "~~/cache/resume.jsonl"})
 local data = {}
 
@@ -9,7 +8,7 @@ local function load_resume_data()
     if not f then return {} end
     local content = f:read()
     f:close()
-    return utils.parse_json(content or "") or {}
+    return utils.parse_json(content or "{}")
 end
 
 --保存播放进度到文件
@@ -23,15 +22,16 @@ end
 --恢复已保存的播放进度
 local function resume_playback()
     if not mp.get_property_bool("idle-active") then return end
-
     local data = load_resume_data()
-    local status = pcall(mp.commandv, "loadfile", data.path)
-    if not status then  mp.osd_message("No valid records found.", 3) return end
+    if not (data.path and (utils.file_info(data.path) or data.path:match("..+://"))) then
+        mp.osd_message("No valid records found.", 3)
+        return
+    end
     --mp.commandv("loadfile", data.path, "replace", 1, "start="..data.time)
-
+    mp.commandv("loadfile", data.path)
     local function init_handler()
-        if data.time then mp.commandv("seek", data.time, "absolute") end
         --if data.pos then mp.commandv("add", "playlist-pos", data.pos) end
+        if data.time then mp.commandv("seek", data.time, "absolute") end
         mp.unregister_event(init_handler)
     end
     mp.register_event("file-loaded", init_handler)
