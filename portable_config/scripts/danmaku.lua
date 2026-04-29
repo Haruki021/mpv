@@ -77,53 +77,53 @@ end
 
 -- 弹幕轨道管理：防止弹幕重叠，自动分配轨道
 local tracks = {}
-local function alloc_track(start, duration, max_tracks)
+local function alloc_track(dm, max_tracks)
     local best_track, min_time = 1, math.huge
     for i = 1, max_tracks do
-        if not tracks[i] or tracks[i] <= start then best_track=i break end
+        if not tracks[i] or tracks[i] <= dm.attrs.start then best_track=i break end
         if tracks[i] < min_time then min_time=tracks[i] best_track=i end
     end
-    tracks[best_track] = start+duration
+    tracks[best_track] = dm.attrs.start+dm.attrs.duration
     return best_track-1
 end
 
 -- 生成滚动弹幕移动动画（从右向左滑动）
-local function generate_move_effect(danmaku, fps)
-    local text_len = utf8_len(danmaku.text)
-    local text_width = text_len*danmaku.attrs.fs*0.45
-    local speed  = fps<60 and 4*fps or 2*fps
-    local move_duration = (1920+text_width)/(speed+math.random(text_len))
+local function generate_move_effect(dm, fps)
+    local text_len = utf8_len(dm.text)
+    local text_width = text_len*dm.attrs.fs/2
+    local speed  = fps<60 and 5*fps or 3*fps
+    dm.attrs.duration = (1920+text_width)/(speed+math.floor(text_len/8))
 
-    local track_height = danmaku.attrs.fs+2
+    local track_height = dm.attrs.fs+1
     local max_tracks = math.floor(810/track_height)
-    local track = alloc_track(danmaku.attrs.start, move_duration, max_tracks)
+    local track = alloc_track(dm, max_tracks)
     local y_pos = track*track_height
 
-    return {string.format("\\move(1920,%d,-%d,%d)", y_pos, text_width, y_pos)}, move_duration
+    return {string.format("\\move(1920,%d,-%d,%d)", y_pos, text_width, y_pos)}
 end
 
 -- 弹幕行转换为ASS字幕
-local function danmaku_to_ass(danmaku, fps)
-    local color = convert_bili_color_to_ass(danmaku.attrs.color)
+local function danmaku_to_ass(dm, fps)
+    local color = convert_bili_color_to_ass(dm.attrs.color)
     local style = "Default"
     local effect = {}
 
-    if danmaku.attrs.mode == 5 then
+    if dm.attrs.mode == 5 then
         style = "Top"
-    elseif danmaku.attrs.mode == 4 then
+    elseif dm.attrs.mode == 4 then
         style = "Bottom"
     else
-        effect, danmaku.attrs.duration = generate_move_effect(danmaku, fps)
+        effect = generate_move_effect(dm, fps)
     end
 
     if color ~= "&HFFFFFF" then table.insert(effect, 1,"\\1c"..color ) end
-    if danmaku.attrs.fs ~= 40 then table.insert(effect, 1, "\\fs"..danmaku.attrs.fs) end
+    if dm.attrs.fs ~= 40 then table.insert(effect, 1, "\\fs"..dm.attrs.fs) end
     effect = next(effect) and "{" .. table.concat(effect) .. "}" or ""
 
     return string.format("Dialogue: 0,%s,%s,%s,,0,0,0,,%s%s",
-        sec_to_ass_time(danmaku.attrs.start),
-        sec_to_ass_time(danmaku.attrs.start+danmaku.attrs.duration),
-        style, effect, danmaku.text)
+        sec_to_ass_time(dm.attrs.start),
+        sec_to_ass_time(dm.attrs.start+dm.attrs.duration),
+        style, effect, dm.text)
 end
 
 -- 获取B站弹幕URL、视频帧率
@@ -163,7 +163,6 @@ local function process_danmaku(data)
     ass_file:close()
 
     mp.commandv("sub-remove", 1)
-    mp.set_property("secondary-sub-ass-override", "scale")
     mp.commandv("sub-add", ass_path, "auto")
     mp.set_property_number("secondary-sid", 1)
     mp.msg.info("Total "..#danmaku.." danmakus loaded.")
