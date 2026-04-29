@@ -55,7 +55,7 @@ end
 
 -- 解析B站弹幕属性（官方标准格式）
 local function parse_danmaku_attr(attr_str)
-    local attrs = {start = 0, mode = 1, fs = 40, color = 0xFFFFFF, duration = 3}
+    local attrs = {start = 0, mode = 1, fs = 40, color = 0xFFFFFF, dur = 3}
     local parts = {}
     for p in attr_str:gmatch("[^,]+") do table.insert(parts, p) end
 
@@ -77,29 +77,31 @@ end
 
 -- 弹幕轨道管理：防止弹幕重叠，自动分配轨道
 local tracks = {}
-local function alloc_track(dm, max_tracks)
-    local best_track, min_time = 1, math.huge
-    for i = 1, max_tracks do
-        if not tracks[i] or tracks[i] <= dm.attrs.start then best_track=i break end
-        if tracks[i] < min_time then min_time=tracks[i] best_track=i end
+local function alloc_track(dm, lim, text_dur)
+    local sel, tmp, min = nil, 1, math.huge
+    for i = 1, lim do
+        if not tracks[i] or tracks[i][1] <= dm.attrs.start then sel=i break end
+        if not sel and tracks[i][2] <= dm.attrs.start then sel=i end
+        if tracks[i][1] < min then min=tracks[i][1] tmp=i end
     end
-    tracks[best_track] = dm.attrs.start+dm.attrs.duration
-    return best_track-1
+    tracks[sel or tmp] = {dm.attrs.start+dm.attrs.dur, dm.attrs.start+text_dur}
+    return (sel or tmp)-1
 end
 
 -- 生成滚动弹幕移动动画（从右向左滑动）
 local function generate_move_effect(dm, fps)
-    local text_len = utf8_len(dm.text)
-    local text_width = text_len*dm.attrs.fs/2
+    local len = utf8_len(dm.text)
+    local width = len*dm.attrs.fs/2
     local speed  = fps<60 and 4*fps or 2*fps
-    dm.attrs.duration = (1920+text_width)/speed
+    local text_dur = width/speed
+    dm.attrs.dur = (1920+width)/speed
 
-    local track_height = dm.attrs.fs+1
-    local max_tracks = math.floor(810/track_height)
-    local track = alloc_track(dm, max_tracks)
-    local y_pos = track*track_height
+    local dh = dm.attrs.fs+1
+    local lim = math.floor(810/dh)
+    local track = alloc_track(dm, lim, text_dur)
+    local y_pos = track*dh
 
-    return {string.format("\\move(1920,%d,-%d,%d)", y_pos, text_width, y_pos)}
+    return {string.format("\\move(1920,%d,-%d,%d)", y_pos, width, y_pos)}
 end
 
 -- 弹幕行转换为ASS字幕
@@ -122,7 +124,7 @@ local function danmaku_to_ass(dm, fps)
 
     return string.format("Dialogue: 0,%s,%s,%s,,0,0,0,,%s%s",
         sec_to_ass_time(dm.attrs.start),
-        sec_to_ass_time(dm.attrs.start+dm.attrs.duration),
+        sec_to_ass_time(dm.attrs.start+dm.attrs.dur),
         style, effect, dm.text)
 end
 
