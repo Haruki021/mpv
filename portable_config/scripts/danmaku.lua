@@ -49,8 +49,8 @@ end
 
 -- XML转义字符还原（&lt; → < 等）
 local function xml_unescape(s)
-    return s:gsub("&(lt|gt|quot|apos|amp);|({|})",
-        {lt="<",gt=">",quot='"',apos="'",amp="&",["{"]="\\{",["}"]="\\}"})
+    return s:gsub("&(.-);", {lt="<",gt=">",quot='"',apos="'",amp="&"})
+            :gsub("[{}]", "\\%0")
 end
 
 -- 解析B站弹幕属性（官方标准格式）
