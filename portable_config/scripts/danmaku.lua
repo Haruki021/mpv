@@ -79,8 +79,8 @@ end
 local function alloc_track(dm, lim, dt, tracks)
     local sel, tmp, min = nil, 1, math.huge
     for i = 1, lim do
-        if not tracks[i] or tracks[i][2] <= dm.attrs.start then sel=i break end
-        if tracks[i][1] <= dm.attrs.start then sel=i break end
+        if not tracks[i] or tracks[i][1] <= dm.attrs.start then sel=i break end
+        if not sel and tracks[i][2] <= dm.attrs.start then sel=i end
         if tracks[i][2] < min then min=tracks[i][2] tmp=i end
     end
     if not sel then dm.attrs.dur=dm.attrs.dur-dt dt=0 end
