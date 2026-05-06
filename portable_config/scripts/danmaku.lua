@@ -24,8 +24,8 @@ local ass_path = mp.command_native({"expand-path", "~~/cache/danmaku.ass"})
 local function utf8_len(s)
     local len, char = 0, {string.byte(s, 1, -1)}
     for i = 1, #char do
-        if char[i] >= 0xC0 then len = len + 2 end
-        if char[i] <= 0x7F then len = len + 1 end
+        if char[i] >= 0xC0 then len = len + 2
+        elseif char[i] <= 0x7F then len = len + 1 end
     end
     return len
 end
@@ -76,14 +76,15 @@ local function parse_xml_danmaku(xml_content)
 end
 
 -- 弹幕轨道管理：防止弹幕重叠，自动分配轨道
-local function alloc_track(dm, lim, text_dur, tracks)
+local function alloc_track(dm, lim, dt, tracks)
     local sel, tmp, min = nil, 1, math.huge
     for i = 1, lim do
-        if not tracks[i] or tracks[i][1] <= dm.attrs.start then sel=i break end
-        if not sel and tracks[i][2] <= dm.attrs.start then sel=i end
-        if tracks[i][1] < min then min=tracks[i][1] tmp=i end
+        if not tracks[i] or tracks[i][2] <= dm.attrs.start then sel=i break end
+        if tracks[i][1] <= dm.attrs.start then sel=i break end
+        if tracks[i][2] < min then min=tracks[i][2] tmp=i end
     end
-    tracks[sel or tmp] = {dm.attrs.start+dm.attrs.dur, dm.attrs.start+text_dur}
+    if not sel then dm.attrs.dur=dm.attrs.dur-dt dt=0 end
+    tracks[sel or tmp] = {dm.attrs.start+dm.attrs.dur, dm.attrs.start+dt}
     return (sel or tmp)-1
 end
 
@@ -92,12 +93,12 @@ local function generate_move_effect(dm, fps, tracks)
     local len = utf8_len(dm.text)
     local width = len*dm.attrs.fs/2
     local speed  = fps<60 and 4*fps or 2*fps
-    local text_dur = width/speed
     dm.attrs.dur = (1920 + width)/speed
 
+    local dt = width/speed
     local dh = dm.attrs.fs+1
     local lim = math.floor(810/dh)
-    local track = alloc_track(dm, lim, text_dur, tracks)
+    local track = alloc_track(dm, lim, dt, tracks)
     local y_pos = track*dh
 
     return {string.format("\\move(1920,%d,-%d,%d)", y_pos, width, y_pos)}
@@ -117,9 +118,9 @@ local function danmaku_to_ass(dm, fps, tracks)
         effect = generate_move_effect(dm, fps, tracks)
     end
 
-    if color ~= "&HFFFFFF" then table.insert(effect, 1,"\\1c"..color ) end
+    if color ~= "&HFFFFFF" then table.insert(effect, 1,"\\1c"..color) end
     if dm.attrs.fs ~= 40 then table.insert(effect, 1, "\\fs"..dm.attrs.fs) end
-    effect = next(effect) and "{" .. table.concat(effect) .. "}" or ""
+    effect = next(effect) and "{"..table.concat(effect).."}" or ""
 
     return string.format("Dialogue: 0,%s,%s,%s,,0,0,0,,%s%s",
         sec_to_ass_time(dm.attrs.start),
@@ -159,7 +160,10 @@ local function process_danmaku(data)
     end
 
     local ass_file = io.open(ass_path, "w")
-    if not ass_file then return end
+    if not ass_file then
+        ass_path = os.tmpname()
+        ass_file = io.open(ass_path, "w")
+    end
     ass_file:write(table.concat(ass_content, "\n"))
     ass_file:close()
 
