@@ -19,33 +19,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
 -- 生成的ASS文件保存路径（MPV缓存目录）
 local ass_path = mp.command_native({"expand-path", "~~/cache/danmaku.ass"})
-
--- UTF8字符串长度计算（半角=1，全角=2）
-local function utf8_len(s)
-    local len, char = 0, {string.byte(s, 1, -1)}
-    for i = 1, #char do
-        if char[i] >= 0xC0 then len = len + 2
-        elseif char[i] <= 0x7F then len = len + 1 end
-    end
-    return len
-end
-
--- 秒数转ASS时间格式 HH:MM:SS.cc
-local function sec_to_ass_time(seconds)
-    local total = math.floor(seconds*100)
-    local h = math.floor(total/360000)
-    local m = math.floor(total/6000)%60
-    local s = math.floor(total/100)%60
-    local cs = total%100
-    return string.format("%02d:%02d:%02d.%02d", h, m, s, cs)
-end
-
--- B站颜色转ASS颜色（RRGGBB → BBGGRR）
-local function convert_bili_color_to_ass(color)
-    color = tonumber(color) or 0xFFFFFF
-    local hex = string.format("%06X", color)
-    return string.format("&H%s%s%s", hex:sub(5,6), hex:sub(3,4), hex:sub(1,2))
-end
+local userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36"
 
 -- XML转义字符还原（&lt; → < 等）
 local function xml_unescape(s)
@@ -75,6 +49,16 @@ local function parse_xml_danmaku(xml_content)
     return danmaku
 end
 
+-- UTF8字符串长度计算（半角=1，全角=2）
+local function utf8_len(s)
+    local len, char = 0, {string.byte(s, 1, -1)}
+    for i = 1, #char do
+        if char[i] >= 0xC0 then len = len + 2
+        elseif char[i] <= 0x7F then len = len + 1 end
+    end
+    return len
+end
+
 -- 弹幕轨道管理：防止弹幕重叠，自动分配轨道
 local function alloc_track(dm, lim, dt, tracks)
     local sel, tmp, min = nil, 1, math.huge
@@ -100,6 +84,23 @@ local function generate_move_effect(dm, fps, tracks)
     local y_pos = track*dh
 
     return string.format("\\move(1920,%d,-%d,%d)", y_pos, width, y_pos)
+end
+
+-- B站颜色转ASS颜色（RRGGBB → BBGGRR）
+local function convert_bili_color_to_ass(color)
+    color = tonumber(color) or 0xFFFFFF
+    local hex = string.format("%06X", color)
+    return string.format("&H%s%s%s", hex:sub(5,6), hex:sub(3,4), hex:sub(1,2))
+end
+
+-- 秒数转ASS时间格式 HH:MM:SS.cc
+local function sec_to_ass_time(seconds)
+    local total = math.floor(seconds*100)
+    local h = math.floor(total/360000)
+    local m = math.floor(total/6000)%60
+    local s = math.floor(total/100)%60
+    local cs = total%100
+    return string.format("%02d:%02d:%02d.%02d", h, m, s, cs)
 end
 
 -- 弹幕行转换为ASS字幕
@@ -136,9 +137,8 @@ local function danmaku_info()
     }
 end
 
-local function process_danmaku(data)
+local function danmaku_fetch(data)
     if not data.url then return false end
-    local userAgent = mp.get_property("file-local-options/user-agent", "")
     local res = mp.command_native({
         name = "subprocess", capture_stdout = true, capture_stderr = true,
         args = {"curl", "-fs", data.url, "-A", userAgent, "--compressed"}})
@@ -147,19 +147,21 @@ local function process_danmaku(data)
         mp.msg.error("Failed to download danmaku: " .. (res.stderr or "unknown error"))
         return false
     end
+    return res.stdout, data.fps or 30
+end
 
-    local danmaku = parse_xml_danmaku(res.stdout)
-    if #danmaku == 0 then mp.msg.warn("No danmaku parsed.") return false end
-    
-    local ass_content = {ASS_HEADER}
-    local tracks = {}
+local function process_danmaku(xml_content, fps)
+    if not xml_content then return false end
+    local danmaku = parse_xml_danmaku(xml_content)
+    if #danmaku==0 then mp.msg.warn("No danmaku parsed.") return false end
 
     table.sort(danmaku, function(a, b)
         return a.attrs.start < b.attrs.start
     end)
 
+    local ass_content, tracks = {ASS_HEADER}, {}
     for i, dm in ipairs(danmaku) do
-        ass_content[i+1] = danmaku_to_ass(dm, data.fps, tracks)
+        ass_content[i+1] = danmaku_to_ass(dm, fps, tracks)
     end
 
     local ass_file = io.open(ass_path, "w")
@@ -174,7 +176,7 @@ local function process_danmaku(data)
     mp.commandv("sub-add", ass_path, "auto")
     mp.set_property_number("secondary-sid", 1)
     mp.msg.info(string.format("Total %d danmakus loaded.", #danmaku))
-    return data.fps < 60 and 2*data.fps
+    return fps < 60 and 2*fps
 end
 
 -- 帧率滤镜控制（优化弹幕流畅度）
@@ -194,7 +196,7 @@ local function danmaku_vfilter(status, filter)
 end
 
 mp.add_hook("on_preloaded", 50, function()
-    local status = process_danmaku(danmaku_info())
+    local status = process_danmaku(danmaku_fetch(danmaku_info()))
     local filter = mp.get_property("vf", ""):match("@danmaku")
     danmaku_vfilter(status, filter)
 end)
