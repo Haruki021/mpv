@@ -55,9 +55,9 @@ end
 
 -- 解析B站弹幕属性（官方标准格式）
 local function parse_danmaku_attr(attr_str)
-    local attrs = {start = 0, mode = 1, fs = 40, color = 0xFFFFFF, dur = 3}
+    local attrs = {start=0, mode=1, fs=40, color=0xFFFFFF, dur=3}
     local parts = {}
-    for p in attr_str:gmatch("[^,]+") do table.insert(parts, p) end
+    for p in attr_str:gmatch("[^,]+") do parts[#parts+1] = p end
 
     attrs.start = tonumber(parts[1]) or 0
     attrs.mode = tonumber(parts[2]) or 1
@@ -69,8 +69,8 @@ end
 -- 正则解析XML弹幕数据
 local function parse_xml_danmaku(xml_content)
     local danmaku = {}
-    for p_attr, text in string.gmatch(xml_content, '<d%s+p="([^"]*)"[^>]*>%s*(.-)%s*</d>') do
-        table.insert(danmaku, {attrs=parse_danmaku_attr(p_attr), text=xml_unescape(text)})
+    for p_attr, text in xml_content:gmatch('<d%s+p="([^"]*)"[^>]*>%s*(.-)%s*</d>') do
+        danmaku[#danmaku+1] = {attrs=parse_danmaku_attr(p_attr), text=xml_unescape(text)}
     end
     return danmaku
 end
@@ -80,18 +80,16 @@ local function alloc_track(dm, lim, dt, tracks)
     local sel, tmp, min = nil, 1, math.huge
     for i = 1, lim do
         if not tracks[i] or tracks[i][1] <= dm.attrs.start then sel=i break end
-        if not sel and tracks[i][2] <= dm.attrs.start then sel=i end
-        if tracks[i][2] < min then min=tracks[i][2] tmp=i end
+        if not sel and tracks[i][2] <= dm.attrs.start then sel=i break end
+        if tracks[i][1] < min then min=tracks[i][1] tmp=i end
     end
-    if not sel then dm.attrs.dur=dm.attrs.dur-dt dt=0 end
-    tracks[sel or tmp] = {dm.attrs.start+dm.attrs.dur, dm.attrs.start+dt}
+    tracks[sel or tmp] = {dm.attrs.start+dm.attrs.dur, dm.attrs.start+dt+dt}
     return (sel or tmp)-1
 end
 
 -- 生成滚动弹幕移动动画（从右向左滑动）
 local function generate_move_effect(dm, fps, tracks)
-    local len = utf8_len(dm.text)
-    local width = len*dm.attrs.fs/2
+    local width = utf8_len(dm.text)*dm.attrs.fs/2
     local speed  = fps<60 and 4*fps or 2*fps
     dm.attrs.dur = (1920 + width)/speed
 
@@ -101,26 +99,26 @@ local function generate_move_effect(dm, fps, tracks)
     local track = alloc_track(dm, lim, dt, tracks)
     local y_pos = track*dh
 
-    return {string.format("\\move(1920,%d,-%d,%d)", y_pos, width, y_pos)}
+    return string.format("\\move(1920,%d,-%d,%d)", y_pos, width, y_pos)
 end
 
 -- 弹幕行转换为ASS字幕
 local function danmaku_to_ass(dm, fps, tracks)
     local color = convert_bili_color_to_ass(dm.attrs.color)
     local style = "Default"
-    local effect = {}
+    local parts = {}
 
     if dm.attrs.mode == 5 then
         style = "Top"
     elseif dm.attrs.mode == 4 then
         style = "Bottom"
     else
-        effect = generate_move_effect(dm, fps, tracks)
+        table.insert(parts, generate_move_effect(dm, fps, tracks))
     end
 
-    if color ~= "&HFFFFFF" then table.insert(effect, 1,"\\1c"..color) end
-    if dm.attrs.fs ~= 40 then table.insert(effect, 1, "\\fs"..dm.attrs.fs) end
-    effect = next(effect) and "{"..table.concat(effect).."}" or ""
+    if dm.attrs.fs ~= 40 then table.insert(parts, "\\fs"..dm.attrs.fs) end
+    if color ~= "&HFFFFFF" then table.insert(parts, "\\1c"..color) end
+    local effect = #parts==0 and "" or "{"..table.concat(parts).."}"
 
     return string.format("Dialogue: 0,%s,%s,%s,,0,0,0,,%s%s",
         sec_to_ass_time(dm.attrs.start),
@@ -145,9 +143,14 @@ local function process_danmaku(data)
         name = "subprocess", capture_stdout = true, capture_stderr = true,
         args = {"curl", "-fs", data.url, "-A", userAgent, "--compressed"}})
 
-    if not res.stdout or res.stderr ~= "" then return false end
+    if not res.stdout or res.stderr ~= "" then
+        mp.msg.error("Failed to download danmaku: " .. (res.stderr or "unknown error"))
+        return false
+    end
 
     local danmaku = parse_xml_danmaku(res.stdout)
+    if #danmaku == 0 then mp.msg.warn("No danmaku parsed.") return false end
+    
     local ass_content = {ASS_HEADER}
     local tracks = {}
 
@@ -155,8 +158,8 @@ local function process_danmaku(data)
         return a.attrs.start < b.attrs.start
     end)
 
-    for _, dm in ipairs(danmaku) do
-        table.insert(ass_content, danmaku_to_ass(dm, data.fps, tracks))
+    for i, dm in ipairs(danmaku) do
+        ass_content[i+1] = danmaku_to_ass(dm, data.fps, tracks)
     end
 
     local ass_file = io.open(ass_path, "w")
@@ -170,7 +173,7 @@ local function process_danmaku(data)
     mp.commandv("sub-remove", 1)
     mp.commandv("sub-add", ass_path, "auto")
     mp.set_property_number("secondary-sid", 1)
-    mp.msg.info("Total "..#danmaku.." danmakus loaded.")
+    mp.msg.info(string.format("Total %d danmakus loaded.", #danmaku))
     return data.fps < 60 and 2*data.fps
 end
 
