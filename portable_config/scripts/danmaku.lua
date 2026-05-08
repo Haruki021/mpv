@@ -64,10 +64,10 @@ local function alloc_track(dm, lim, dt, tracks)
     local sel, tmp, min = nil, 1, math.huge
     for i = 1, lim do
         if not tracks[i] or tracks[i][1] <= dm.attrs.start then sel=i break end
-        if not sel and tracks[i][2] <= dm.attrs.start then sel=i break end
+        if not sel and tracks[i][2] <= dm.attrs.start-dt then sel=i break end
         if tracks[i][1] < min then min=tracks[i][1] tmp=i end
     end
-    tracks[sel or tmp] = {dm.attrs.start+dm.attrs.dur, dm.attrs.start+dt+dt}
+    tracks[sel or tmp] = {dm.attrs.start+dm.attrs.dur, dm.attrs.start+dt}
     return (sel or tmp)-1
 end
 
@@ -127,7 +127,7 @@ local function danmaku_to_ass(dm, fps, tracks)
         style, effect, dm.text)
 end
 
--- 获取B站弹幕URL、视频帧率
+-- 获取B站弹幕URL和视频帧率
 local function danmaku_info()
     local result = mp.get_property_native("user-data/mpv/ytdl/json-subprocess-result") or {}
     local data = require 'mp.utils'.parse_json(result.stdout or "") or {}
