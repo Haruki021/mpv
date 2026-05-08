@@ -135,17 +135,17 @@ local function danmaku_info()
     }
 end
 
-local function danmaku_fetch(data)
-    if not data.url then return false end
+local function danmaku_fetch(url)
+    if not url then return false end
     local res = mp.command_native({
         name = "subprocess", capture_stdout = true, capture_stderr = true,
-        args = {"curl", "-fsSL", "-A", "Mozilla/5.0 Chrome", "--compressed", data.url}})
+        args = {"curl", "-fsSL", "-A", "Mozilla/5.0 Chrome", "--compressed", url}})
 
     if res.status ~= 0 then
         mp.msg.error("Failed to download danmaku: " .. (res.stderr or "unknown error"))
         return false
     end
-    return res.stdout, data.fps or 30
+    return res.stdout
 end
 
 local function process_danmaku(xml_content, fps)
@@ -174,18 +174,18 @@ local function process_danmaku(xml_content, fps)
     mp.commandv("sub-add", ass_path, "auto")
     mp.set_property_number("secondary-sid", 1)
     mp.msg.info(string.format("Total %d danmakus loaded.", #danmaku))
-    return fps < 60 and 2*fps
+    return true
 end
 
 -- 帧率滤镜控制（优化弹幕流畅度）
-local function danmaku_vfilter(status)
-    if status then
+local function danmaku_vfilter(status, fps)
+    if status and fps<60 then
         if not mp.get_property("vf", ""):match("@danmaku") then
             mp.add_key_binding("Ctrl+d", "@danmaku", function()
                 mp.commandv("vf", "toggle", "@danmaku")
             end)
         end
-        mp.commandv("vf", "add", ("@danmaku:lavfi=[fps=fps=%d:round=down]"):format(status))
+        mp.commandv("vf", "add", ("@danmaku:lavfi=[fps=fps=%d:round=down]"):format(2*fps))
     else
         if mp.get_property("vf", ""):match("@danmaku") then
             mp.commandv("vf", "remove", "@danmaku")
@@ -195,6 +195,8 @@ local function danmaku_vfilter(status)
 end
 
 mp.add_hook("on_preloaded", 50, function()
-    local status = process_danmaku(danmaku_fetch(danmaku_info()))
-    danmaku_vfilter(status)
+    local data = danmaku_info()
+    local xml_content = danmaku_fetch(data.url)
+    local status = process_danmaku(xml_content, data.fps)
+    danmaku_vfilter(status, data.fps)
 end)
