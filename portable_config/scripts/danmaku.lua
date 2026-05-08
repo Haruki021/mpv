@@ -17,7 +17,7 @@ Style: Bottom,Microsoft YaHei,40,&H33FFFFFF,&H00000000,&H33000000,&H00000000,0,0
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 ]]
 
--- 生成的ASS文件保存路径（MPV缓存目录）
+-- ASS文件保存路径（MPV缓存目录）
 local ass_path = mp.command_native({"expand-path", "~~/cache/danmaku.ass"})
 
 -- XML转义字符还原（&lt; → < 等）
@@ -42,7 +42,7 @@ end
 -- 正则解析XML弹幕数据
 local function parse_xml_danmaku(xml_content)
     local danmaku = {}
-    for p_attr, text in xml_content:gmatch('<d%s+p="([^"]*)"[^>]*>%s*(.-)%s*</d>') do
+    for p_attr, text in xml_content:gmatch('<d%s+p="([^"]*)".->%s*(.-)%s*</d>') do
         danmaku[#danmaku+1] = {attrs=parse_danmaku_attr(p_attr), text=xml_unescape(text)}
     end
     return danmaku
@@ -125,7 +125,7 @@ local function danmaku_to_ass(dm, fps, tracks)
         style, effect, dm.text)
 end
 
--- 获取B站弹幕URL和视频帧率
+-- 获取B站弹幕地址与帧率
 local function danmaku_info()
     local result = mp.get_property_native("user-data/mpv/ytdl/json-subprocess-result") or {}
     local data = require 'mp.utils'.parse_json(result.stdout or "") or {}
@@ -135,6 +135,7 @@ local function danmaku_info()
     }
 end
 
+-- 下载XML弹幕原始数据
 local function danmaku_fetch(url)
     if not url then return false end
     local res = mp.command_native({
@@ -148,6 +149,7 @@ local function danmaku_fetch(url)
     return res.stdout
 end
 
+-- 解析XML并生成ASS弹幕文件
 local function process_danmaku(xml_content, fps)
     if not xml_content then return false end
     local danmaku = parse_xml_danmaku(xml_content)
@@ -169,11 +171,16 @@ local function process_danmaku(xml_content, fps)
     end
     ass_file:write(table.concat(ass_content, "\n"))
     ass_file:close()
+    return #danmaku
+end
 
+-- 加载ASS弹幕文件
+local function load_danmaku(dms)
+    if not dms then return false end
     mp.commandv("sub-remove", 1)
     mp.commandv("sub-add", ass_path, "auto")
     mp.set_property_number("secondary-sid", 1)
-    mp.msg.info(string.format("Total %d danmakus loaded.", #danmaku))
+    mp.msg.info(string.format("Total %d danmakus loaded.", dms))
     return true
 end
 
@@ -197,6 +204,7 @@ end
 mp.add_hook("on_preloaded", 50, function()
     local data = danmaku_info()
     local xml_content = danmaku_fetch(data.url)
-    local status = process_danmaku(xml_content, data.fps)
+    local dms = process_danmaku(xml_content, data.fps)
+    local status = load_danmaku(dms)
     danmaku_vfilter(status, data.fps)
 end)
