@@ -19,7 +19,6 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
 -- 生成的ASS文件保存路径（MPV缓存目录）
 local ass_path = mp.command_native({"expand-path", "~~/cache/danmaku.ass"})
-local userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36"
 
 -- XML转义字符还原（&lt; → < 等）
 local function xml_unescape(s)
@@ -82,7 +81,6 @@ local function generate_move_effect(dm, fps, tracks)
     local lim = math.floor(810/dh)
     local track = alloc_track(dm, lim, dt, tracks)
     local y_pos = track*dh
-
     return string.format("\\move(1920,%d,-%d,%d)", y_pos, width, y_pos)
 end
 
@@ -141,7 +139,7 @@ local function danmaku_fetch(data)
     if not data.url then return false end
     local res = mp.command_native({
         name = "subprocess", capture_stdout = true, capture_stderr = true,
-        args = {"curl", "-fsSL", data.url, "-A", userAgent, "--compressed"}})
+        args = {"curl", "-fsSL", "-A", "Mozilla/5.0 Chrome", "--compressed", data.url}})
 
     if res.status ~= 0 then
         mp.msg.error("Failed to download danmaku: " .. (res.stderr or "unknown error"))
