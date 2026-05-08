@@ -178,23 +178,23 @@ local function process_danmaku(xml_content, fps)
 end
 
 -- 帧率滤镜控制（优化弹幕流畅度）
-local function danmaku_vfilter(status, filter)
+local function danmaku_vfilter(status)
     if status then
+        if not mp.get_property("vf", ""):match("@danmaku") then
+            mp.add_key_binding("Ctrl+d", "@danmaku", function()
+                mp.commandv("vf", "toggle", "@danmaku")
+            end)
+        end
         mp.commandv("vf", "add", ("@danmaku:lavfi=[fps=fps=%d:round=down]"):format(status))
-    end
-    if not status and filter then
-        mp.commandv("vf", "remove", "@danmaku")
-        mp.remove_key_binding("@danmaku")
-    end
-    if status and not filter then
-        mp.add_key_binding("Ctrl+d", "@danmaku", function()
-            mp.commandv("vf", "toggle", "@danmaku")
-        end)
+    else
+        if mp.get_property("vf", ""):match("@danmaku") then
+            mp.commandv("vf", "remove", "@danmaku")
+            mp.remove_key_binding("@danmaku")
+        end
     end
 end
 
 mp.add_hook("on_preloaded", 50, function()
     local status = process_danmaku(danmaku_fetch(danmaku_info()))
-    local filter = mp.get_property("vf", ""):match("@danmaku")
-    danmaku_vfilter(status, filter)
+    danmaku_vfilter(status)
 end)
