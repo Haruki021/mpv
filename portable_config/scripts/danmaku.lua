@@ -141,9 +141,9 @@ local function danmaku_fetch(data)
     if not data.url then return false end
     local res = mp.command_native({
         name = "subprocess", capture_stdout = true, capture_stderr = true,
-        args = {"curl", "-fs", data.url, "-A", userAgent, "--compressed"}})
+        args = {"curl", "-fsSL", data.url, "-A", userAgent, "--compressed"}})
 
-    if not res.stdout or res.stderr ~= "" then
+    if res.status ~= 0 then
         mp.msg.error("Failed to download danmaku: " .. (res.stderr or "unknown error"))
         return false
     end
