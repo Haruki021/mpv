@@ -187,7 +187,7 @@ end
 local function danmaku_vfilter(status, fps)
     if status and fps<60 then
         if not mp.get_property("vf", ""):match("@danmaku") then
-            mp.add_key_binding("Ctrl+d", "@danmaku", function()
+            mp.add_key_binding("Ctrl+f", "@danmaku", function()
                 mp.commandv("vf", "toggle", "@danmaku")
             end)
         end
