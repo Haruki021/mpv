@@ -45,7 +45,7 @@ end)
 ----------------------------------------------------------------------------------------------
 -- 自定义字幕屏蔽词
 ----------------------------------------------------------------------------------------------
-mp.add_key_binding("Ctrl+f", "sub-filter", function()
+mp.add_key_binding("x", "sub-filter", function()
     input.get({
         prompt = "Subtitle blocked words：",
         submit = function(value)
