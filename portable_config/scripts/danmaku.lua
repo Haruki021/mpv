@@ -125,14 +125,29 @@ local function danmaku_to_ass(dm, fps, tracks)
         style, effect, dm.text)
 end
 
--- 获取B站弹幕地址与帧率
-local function danmaku_info()
-    local result = mp.get_property_native("user-data/mpv/ytdl/json-subprocess-result") or {}
-    local data = require 'mp.utils'.parse_json(result.stdout or "") or {}
-    return {
-        url = ((data.requested_subtitles or {}).danmaku or {}).url,
-        fps = data.fps or 30
-    }
+-- 解析XML并生成ASS弹幕文件
+local function process_danmaku(xml_content, fps)
+    if not xml_content then return false end
+    local danmaku = parse_xml_danmaku(xml_content)
+    if #danmaku==0 then mp.msg.warn("No danmaku parsed.") return false end
+
+    table.sort(danmaku, function(a, b)
+        return a.attrs.start < b.attrs.start
+    end)
+
+    local ass_content, tracks = {ASS_HEADER}, {}
+    for i = 1, #danmaku do
+        ass_content[i+1] = danmaku_to_ass(danmaku[i], fps, tracks)
+    end
+
+    local ass_file = io.open(ass_path, "w")
+    if not ass_file then
+        ass_path = os.tmpname()
+        ass_file = io.open(ass_path, "w")
+    end
+    ass_file:write(table.concat(ass_content, "\n"))
+    ass_file:close()
+    return #danmaku
 end
 
 -- 下载XML弹幕原始数据
@@ -149,38 +164,22 @@ local function danmaku_fetch(url)
     return res.stdout
 end
 
--- 解析XML并生成ASS弹幕文件
-local function process_danmaku(xml_content, fps)
-    if not xml_content then return false end
-    local danmaku = parse_xml_danmaku(xml_content)
-    if #danmaku==0 then mp.msg.warn("No danmaku parsed.") return false end
-
-    table.sort(danmaku, function(a, b)
-        return a.attrs.start < b.attrs.start
-    end)
-
-    local ass_content, tracks = {ASS_HEADER}, {}
-    for i, dm in ipairs(danmaku) do
-        ass_content[i+1] = danmaku_to_ass(dm, fps, tracks)
-    end
-
-    local ass_file = io.open(ass_path, "w")
-    if not ass_file then
-        ass_path = os.tmpname()
-        ass_file = io.open(ass_path, "w")
-    end
-    ass_file:write(table.concat(ass_content, "\n"))
-    ass_file:close()
-    return #danmaku
+-- 获取B站弹幕地址与帧率
+local function danmaku_info()
+    local result = mp.get_property_native("user-data/mpv/ytdl/json-subprocess-result") or {}
+    local data = require 'mp.utils'.parse_json(result.stdout or "") or {}
+    return {
+        url = ((data.subtitles or {}).danmaku or {})[1].url,
+        fps = data.fps or 30
+    }
 end
 
 -- 加载ASS弹幕文件
-local function load_danmaku(dms)
-    if not dms then return false end
-    mp.commandv("sub-remove", 1)
+local function load_danmaku(cnt)
+    if not cnt then return false end
     mp.commandv("sub-add", ass_path, "auto")
     mp.set_property_number("secondary-sid", 1)
-    mp.msg.info(string.format("Total %d danmakus loaded.", dms))
+    mp.msg.info(string.format("Total %d danmakus loaded.", cnt))
     return true
 end
 
@@ -192,7 +191,7 @@ local function danmaku_vfilter(status, fps)
                 mp.commandv("vf", "toggle", "@danmaku")
             end)
         end
-        mp.commandv("vf", "add", ("@danmaku:lavfi=[fps=fps=%d:round=down]"):format(2*fps))
+        mp.commandv("vf", "add", ("@danmaku:lavfi=[fps=fps=%g:round=down]"):format(2*fps))
     else
         if mp.get_property("vf", ""):match("@danmaku") then
             mp.commandv("vf", "remove", "@danmaku")
@@ -204,7 +203,7 @@ end
 mp.add_hook("on_preloaded", 50, function()
     local data = danmaku_info()
     local xml_content = danmaku_fetch(data.url)
-    local dms = process_danmaku(xml_content, data.fps)
-    local status = load_danmaku(dms)
+    local cnt = process_danmaku(xml_content, data.fps)
+    local status = load_danmaku(cnt)
     danmaku_vfilter(status, data.fps)
 end)
