@@ -1,8 +1,19 @@
+local utils = require 'mp.utils'
+local input = require 'mp.input'
 ---------------------------------------------------------------------------------------------
+-- 最小化窗口暂停播放
+---------------------------------------------------------------------------------------------
+mp.observe_property("window-minimized", "bool", function(name, value)
+    if not mp.get_property_bool("current-tracks/video/image", true) then
+        mp.set_property_bool("pause", value)
+    end
+end)
+---------------------------------------------------------------------------------------------
+-- 打开当前播放文件所在文件夹
 ---------------------------------------------------------------------------------------------
 mp.add_key_binding("e", "open-in-explorer", function()
     local path = mp.get_property("path", "")
-    if require 'mp.utils'.file_info(path) then
+    if utils.file_info(path) then
         mp.command_native({
             name = "subprocess",
             playback_only = false,
@@ -14,26 +25,9 @@ mp.add_key_binding("e", "open-in-explorer", function()
     end
 end)
 ---------------------------------------------------------------------------------------------
+-- 画中画模式
 ---------------------------------------------------------------------------------------------
-mp.observe_property("window-minimized", "bool", function(name, value)
-    if not mp.get_property_bool("current-tracks/video/image", true) then
-        mp.set_property_bool("pause", value)
-    end
-end)
----------------------------------------------------------------------------------------------
----------------------------------------------------------------------------------------------
-mp.observe_property("current-tracks/video/image", "string", function(name, value)
-    if value=="no" and mp.get_property_native("geometry")=="90%x90%" then
-        mp.set_property_native("geometry", "50%:50%")
-        mp.commandv("no-osd", "change-list", "script-opts", "append", "osc-layout=floating")
-    elseif value=="yes" and not mp.get_property_bool("current-tracks/video/album") then
-        mp.set_property_native("geometry", "90%x90%")
-        mp.commandv("no-osd", "change-list", "script-opts", "append", "osc-layout=slimbottombar")
-    end
-end)
----------------------------------------------------------------------------------------------
----------------------------------------------------------------------------------------------
-mp.add_key_binding("/", "picture-in-picture", function()
+mp.add_key_binding("INS", "picture-in-picture", function()
     local list = {fullscreen=false, border=false, ontop=true, geometry="20%x20%-50-50"}
     if mp.get_property_native("geometry")==list.geometry then
         for k, v in pairs(list) do
@@ -49,12 +43,13 @@ mp.add_key_binding("/", "picture-in-picture", function()
     end
 end)
 ----------------------------------------------------------------------------------------------
+-- 自定义字幕屏蔽词
 ----------------------------------------------------------------------------------------------
-mp.add_key_binding("x", "sub-filter", function()
-    require 'mp.input'.get({
+mp.add_key_binding("Ctrl+f", "sub-filter", function()
+    input.get({
         prompt = "Subtitle blocked words：",
         submit = function(value)
-            if value == nil or value == "" then
+            if value==nil or value=="" then
                 mp.commandv("set", "sub-filter-jsre", "[]")
                 return
             end
@@ -63,7 +58,8 @@ mp.add_key_binding("x", "sub-filter", function()
         end
     })
 end)
-
+----------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------
 --[[
 -- the coroutine will yield after the clickdown event and resume after the clickup event
 local main = coroutine.wrap(function()
@@ -82,4 +78,15 @@ end)
 
 -- complex ensures the main function will be called for separate click down/up events
 mp.add_forced_key_binding("MBTN_LEFT", "pause-or-drag", main, {complex = true})
+---]]
+--[[
+mp.observe_property("current-tracks/video/image", "string", function(name, value)
+    if value=="no" and mp.get_property_native("geometry")=="90%x90%" then
+        mp.set_property_native("geometry", "50%:50%")
+        mp.commandv("no-osd", "change-list", "script-opts", "append", "osc-layout=floating")
+    elseif value=="yes" and not mp.get_property_bool("current-tracks/video/album") then
+        mp.set_property_native("geometry", "90%x90%")
+        mp.commandv("no-osd", "change-list", "script-opts", "append", "osc-layout=slimbottombar")
+    end
+end)
 ---]]
