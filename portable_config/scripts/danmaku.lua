@@ -19,6 +19,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
 -- ASS文件保存路径（MPV缓存目录）
 local ass_path = mp.command_native({"expand-path", "~~/cache/danmaku.ass"})
+local utils = require 'mp.utils'
+local input = require 'mp.input'
 
 -- XML转义字符还原（&lt; → < 等）
 local function xml_unescape(s)
@@ -88,7 +90,7 @@ end
 local function convert_bili_color_to_ass(color)
     color = tonumber(color) or 0xFFFFFF
     local hex = string.format("%06X", color)
-    return string.format("&H%s%s%s", hex:sub(5,6), hex:sub(3,4), hex:sub(1,2))
+    return string.format("&H%s%s%s&", hex:sub(5,6), hex:sub(3,4), hex:sub(1,2))
 end
 
 -- 秒数转ASS时间格式 HH:MM:SS.cc
@@ -116,7 +118,7 @@ local function danmaku_to_ass(dm, fps, tracks)
     end
 
     if dm.attrs.fs ~= 40 then table.insert(parts, "\\fs"..dm.attrs.fs) end
-    if color ~= "&HFFFFFF" then table.insert(parts, "\\1c"..color) end
+    if color ~= "&HFFFFFF&" then table.insert(parts, "\\1c"..color) end
     local effect = #parts==0 and "" or "{"..table.concat(parts).."}"
 
     return string.format("Dialogue: 0,%s,%s,%s,,0,0,0,,%s%s",
@@ -127,7 +129,6 @@ end
 
 -- 解析XML并生成ASS弹幕文件
 local function process_danmaku(xml_content, fps)
-    if not xml_content then return false end
     local danmaku = parse_xml_danmaku(xml_content)
     if #danmaku==0 then mp.msg.warn("No danmaku parsed.") return false end
 
@@ -152,7 +153,6 @@ end
 
 -- 下载XML弹幕原始数据
 local function danmaku_fetch(url)
-    if not url then return false end
     local res = mp.command_native({
         name = "subprocess", capture_stdout = true, capture_stderr = true,
         args = {"curl", "-fsSL", "-A", "Mozilla/5.0 Chrome", "--compressed", url}})
@@ -167,20 +167,11 @@ end
 -- 获取B站弹幕地址与帧率
 local function danmaku_info()
     local result = mp.get_property_native("user-data/mpv/ytdl/json-subprocess-result") or {}
-    local data = require 'mp.utils'.parse_json(result.stdout or "") or {}
+    local data = utils.parse_json(result.stdout or "") or {}
     return {
-        url = ((data.subtitles or {}).danmaku or {})[1].url,
+        url = (((data.subtitles or {}).danmaku or {})[1] or{}).url,
         fps = data.fps or 30
     }
-end
-
--- 加载ASS弹幕文件
-local function load_danmaku(cnt)
-    if not cnt then return false end
-    mp.commandv("sub-add", ass_path, "auto")
-    mp.set_property_number("secondary-sid", 1)
-    mp.msg.info(string.format("Total %d danmakus loaded.", cnt))
-    return true
 end
 
 -- 帧率滤镜控制（优化弹幕流畅度）
@@ -191,7 +182,7 @@ local function danmaku_vfilter(status, fps)
                 mp.commandv("vf", "toggle", "@danmaku")
             end)
         end
-        mp.commandv("vf", "add", ("@danmaku:lavfi=[fps=fps=%g:round=down]"):format(2*fps))
+        mp.commandv("vf", "add", ("@danmaku:lavfi=[fps=%g:round=down]"):format(2*fps))
     else
         if mp.get_property("vf", ""):match("@danmaku") then
             mp.commandv("vf", "remove", "@danmaku")
@@ -200,10 +191,59 @@ local function danmaku_vfilter(status, fps)
     end
 end
 
+-- 统一加载流程（下载→解析→加载ASS→滤镜）
+local function load_danmaku_from_url(url, fps)
+    local xml_content = url and danmaku_fetch(url)
+    local cnt = xml_content and process_danmaku(xml_content, fps)
+    if cnt then
+        mp.commandv("sub-remove", 1)
+        mp.commandv("sub-add", ass_path, "auto")
+        mp.set_property_number("secondary-sid", 1)
+        mp.msg.info(string.format("Total %d danmakus loaded.", cnt))
+    end
+    danmaku_vfilter(cnt, fps)
+    return cnt
+end
+
 mp.add_hook("on_preloaded", 50, function()
     local data = danmaku_info()
-    local xml_content = danmaku_fetch(data.url)
-    local cnt = process_danmaku(xml_content, data.fps)
-    local status = load_danmaku(cnt)
-    danmaku_vfilter(status, data.fps)
+    load_danmaku_from_url(data.url, data.fps)
+end)
+-------------------------------------------------------------------------------------------
+---以下部分实现加载本地视频弹幕---------------------------------------------------------------
+local function danmaku_url(value)
+    local bvid = value:match("(BV%w+)")
+    if not bvid then
+        input.log("无效地址: 请输入包含BV号的链接", "{\\c&H7a77f2&}")
+        return
+    end
+    local api = ("https://api.bilibili.com/x/player/pagelist?bvid=%s"):format(bvid)
+    local res = mp.command_native({name = "subprocess",
+        capture_stdout = true, capture_stderr = true, playback_only = false,
+        args = {"curl", "-fsSL", "-A", "Mozilla/5.0 Chrome", "-e", "https://www.bilibili.com/", api}})
+    if res.status==0 then
+        local cid = res.stdout:match('"cid":(%d+),')
+        local danmaku_url = ('https://comment.bilibili.com/%d.xml'):format(cid)
+        mp.osd_message("弹幕正在加载中......")
+        return danmaku_url
+    end
+end
+
+mp.add_key_binding("Ctrl+d", "load-bilibili-danmaku", function()
+    input.get({
+        prompt = "请输入B站视频链接(含BV号): ",
+        keep_open = true,
+        default_text = mp.get_property("clipboard/text",""),
+        submit = function(value)
+            if not value or value=="" then
+                input.log("地址不能为空", "{\\c&H7a77f2&}")
+                return
+            end
+
+            local fps = mp.get_property_number("container-fps", 30)
+            local url = danmaku_url(value)
+            local cnt = load_danmaku_from_url(url, fps)
+            if cnt then mp.osd_message(("%d条弹幕加载成功!"):format(cnt)) end
+        end
+    })
 end)
