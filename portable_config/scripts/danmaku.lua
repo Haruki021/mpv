@@ -17,7 +17,6 @@ Style: Bottom,Microsoft YaHei,40,&H33FFFFFF,&H00000000,&H33000000,&H00000000,0,0
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 ]]
 
--- ASS文件保存路径（MPV缓存目录）
 local ass_path = mp.command_native({"expand-path", "~~/cache/danmaku.ass"})
 local utils = require 'mp.utils'
 local input = require 'mp.input'
@@ -65,9 +64,10 @@ local function alloc_track(dm, lim, dt, tracks)
     local sel, tmp, min = nil, 1, math.huge
     for i = 1, lim do
         if not tracks[i] or tracks[i][1] <= dm.attrs.start then sel=i break end
-        if not sel and tracks[i][2] <= dm.attrs.start-dt then sel=i break end
-        if tracks[i][1] < min then min=tracks[i][1] tmp=i end
+        if tracks[i][2] <= dm.attrs.start then sel=i break end
+        if tracks[i][2] <= min then min=tracks[i][2] tmp=i end
     end
+    if not sel then dm.attrs.start = min end
     tracks[sel or tmp] = {dm.attrs.start+dm.attrs.dur, dm.attrs.start+dt}
     return (sel or tmp)-1
 end
@@ -155,7 +155,7 @@ end
 local function danmaku_fetch(url)
     local res = mp.command_native({
         name = "subprocess", capture_stdout = true, capture_stderr = true,
-        args = {"curl", "-fsSL", "-A", "Mozilla/5.0 Chrome", "--compressed", url}})
+        args = {"curl", "-fsSL", "-A", "Mozilla/5.0 Chrome", "-e", "https://www.bilibili.com/", "--compressed", url}})
 
     if res.status ~= 0 then
         mp.msg.error("Failed to download danmaku: " .. (res.stderr or "unknown error"))
@@ -212,12 +212,27 @@ end)
 -------------------------------------------------------------------------------------------
 ---以下部分实现加载本地视频弹幕---------------------------------------------------------------
 local function danmaku_url(value)
-    local bvid = value:match("(BV%w+)")
-    if not bvid then
-        input.log("无效地址: 请输入包含BV号的链接", "{\\c&H7a77f2&}")
+    if not value or value=="" then
+        input.log("无效地址: 地址不能为空", "{\\c&H7a77f2&}")
         return
     end
-    local api = ("https://api.bilibili.com/x/player/pagelist?bvid=%s"):format(bvid)
+    local rules = {
+        { "BV%w+", "https://api.bilibili.com/x/player/pagelist?bvid="},
+        { "AV%d+", "https://api.bilibili.com/x/player/pagelist?aid="},
+        { "ep%d+", "https://api.bilibili.com/pgc/view/web/season?ep_id="},
+        { "ss%d+", "https://api.bilibili.com/pgc/view/web/season?season_id="}
+    }
+
+    local api
+    for _, v in ipairs(rules) do
+        local reg, prefix = v[1], v[2]
+        local id = value:match(reg)
+        if id then api = prefix..id break end
+    end
+    if not api then
+        input.log("无效地址: 未识别 BV/AV/EP/SS 类型", "{\\c&H7a77f2&}")
+        return
+    end
     local res = mp.command_native({name = "subprocess",
         capture_stdout = true, capture_stderr = true, playback_only = false,
         args = {"curl", "-fsSL", "-A", "Mozilla/5.0 Chrome", "-e", "https://www.bilibili.com/", api}})
@@ -227,23 +242,28 @@ local function danmaku_url(value)
         mp.osd_message("弹幕正在加载中......")
         return danmaku_url
     end
+    input.log("获取视频信息失败", "{\\c&H7a77f2&}")
 end
 
 mp.add_key_binding("Ctrl+d", "load-bilibili-danmaku", function()
     input.get({
-        prompt = "请输入B站视频链接(含BV号): ",
+        prompt = "请输入B站视频链接(BV/AV/EP/SS): ",
         keep_open = true,
         default_text = mp.get_property("clipboard/text",""),
         submit = function(value)
-            if not value or value=="" then
-                input.log("地址不能为空", "{\\c&H7a77f2&}")
-                return
-            end
-
-            local fps = mp.get_property_number("container-fps", 30)
             local url = danmaku_url(value)
+            if not url then return end
+            local fps = mp.get_property_number("container-fps", 30)
             local cnt = load_danmaku_from_url(url, fps)
-            if cnt then mp.osd_message(("%d条弹幕加载成功!"):format(cnt)) end
+            if cnt then
+                mp.osd_message(("%d条弹幕加载成功!"):format(cnt))
+                input.terminate()
+            end
         end
     })
+end)
+
+mp.add_key_binding("KP0", function()
+    local time = mp.get_property_number("time-pos", 0)
+    mp.commandv("set", "secondary-sub-delay", time)
 end)
