@@ -40,7 +40,7 @@ local function parse_danmaku_attr(attr_str)
     return attrs
 end
 
--- 正则解析XML弹幕数据
+-- 正则解析XML弹幕
 local function parse_xml_danmaku(xml_content)
     local danmaku = {}
     for p_attr, text in xml_content:gmatch('<d%s+p="([^"]*)".->%s*(.-)%s*</d>') do
@@ -72,7 +72,7 @@ local function alloc_track(dm, lim, dt, tracks)
     return (sel or tmp)-1
 end
 
--- 生成滚动弹幕移动动画（从右向左滑动）
+-- 生成滚动弹幕动画（从右向左滑动）
 local function generate_move_effect(dm, fps, tracks)
     local width = utf8_len(dm.text)*dm.attrs.fs/2
     local speed  = fps<60 and 4*fps or 2*fps
@@ -103,7 +103,7 @@ local function sec_to_ass_time(seconds)
     return string.format("%02d:%02d:%02d.%02d", h, m, s, cs)
 end
 
--- 弹幕行转换为ASS字幕
+-- 弹幕行转ASS字幕行
 local function danmaku_to_ass(dm, fps, tracks)
     local color = convert_bili_color_to_ass(dm.attrs.color)
     local style = "Default"
@@ -153,9 +153,12 @@ end
 
 -- 下载XML弹幕原始数据
 local function danmaku_fetch(url)
-    local res = mp.command_native({
-        name = "subprocess", capture_stdout = true, capture_stderr = true,
-        args = {"curl", "-fsSL", "-A", "Mozilla/5.0 Chrome", "-e", "https://www.bilibili.com/", "--compressed", url}})
+    local res = mp.command_native({name = "subprocess",
+        capture_stdout = true, capture_stderr = true, playback_only = false,
+        args = {"curl", "-fsSL", url, "--compressed",
+        "-A", "Mozilla/5.0 Chrome",
+        "-e", "https://www.bilibili.com/"}
+    })
 
     if res.status ~= 0 then
         mp.msg.error("Failed to download danmaku: " .. (res.stderr or "unknown error"))
@@ -164,7 +167,7 @@ local function danmaku_fetch(url)
     return res.stdout
 end
 
--- 获取B站弹幕地址与帧率
+-- 获取视频弹幕信息
 local function danmaku_info()
     local result = mp.get_property_native("user-data/mpv/ytdl/json-subprocess-result") or {}
     local data = utils.parse_json(result.stdout or "") or {}
@@ -174,17 +177,19 @@ local function danmaku_info()
     }
 end
 
--- 帧率滤镜控制（优化弹幕流畅度）
-local function danmaku_vfilter(status, fps)
-    if status and fps<60 then
-        if not mp.get_property("vf", ""):match("@danmaku") then
+-- 帧率优化滤镜
+local function danmaku_vfilter(cnt, fps)
+    local status = mp.get_property("vf", ""):match("@danmaku")
+
+    if cnt and fps<60 then
+        if not status then
             mp.add_key_binding("Ctrl+f", "@danmaku", function()
                 mp.commandv("vf", "toggle", "@danmaku")
             end)
         end
         mp.commandv("vf", "add", ("@danmaku:lavfi=[fps=%g:round=down]"):format(2*fps))
     else
-        if mp.get_property("vf", ""):match("@danmaku") then
+        if status then
             mp.commandv("vf", "remove", "@danmaku")
             mp.remove_key_binding("@danmaku")
         end
@@ -211,23 +216,34 @@ mp.add_hook("on_preloaded", 50, function()
 end)
 -------------------------------------------------------------------------------------------
 ---以下部分实现加载本地视频弹幕---------------------------------------------------------------
+local function parse_cid(result)
+    local res = utils.parse_json(result)
+    local cids = {}
+    --{data={{},{}},ttl=1,code=0,message=ok}
+    for i = 1, res.ttl do
+        cids[i] = res.data[i].cid
+    end
+    return cids[1] or input.log("cid解析失败.", "{\\c&H7a77f2&}")
+end
+
+local rules = {
+    { "BV%w+", "https://api.bilibili.com/x/player/pagelist?bvid="},
+    { "av(%d+)", "https://api.bilibili.com/x/player/pagelist?aid="},
+    { "ss(%d+)", "https://api.bilibili.com/pgc/web/season/section?season_id="},
+    { "ep(%d+)", "https://api.bilibili.com/pgc/view/web/season?ep_id="}
+}
+
+-- 解析B站链接获取弹幕URL
 local function danmaku_url(value)
     if not value or value=="" then
-        input.log("无效地址: 地址不能为空", "{\\c&H7a77f2&}")
+        input.log("错误: 地址不能为空", "{\\c&H7a77f2&}")
         return
     end
-    local rules = {
-        { "BV%w+", "https://api.bilibili.com/x/player/pagelist?bvid="},
-        { "AV%d+", "https://api.bilibili.com/x/player/pagelist?aid="},
-        { "ep%d+", "https://api.bilibili.com/pgc/view/web/season?ep_id="},
-        { "ss%d+", "https://api.bilibili.com/pgc/view/web/season?season_id="}
-    }
 
     local api
-    for _, v in ipairs(rules) do
-        local reg, prefix = v[1], v[2]
-        local id = value:match(reg)
-        if id then api = prefix..id break end
+    for _, rule in ipairs(rules) do
+        local id = value:match(rule[1])
+        if id then api = rule[2]..id break end
     end
     if not api then
         input.log("无效地址: 未识别 BV/AV/EP/SS 类型", "{\\c&H7a77f2&}")
@@ -235,14 +251,19 @@ local function danmaku_url(value)
     end
     local res = mp.command_native({name = "subprocess",
         capture_stdout = true, capture_stderr = true, playback_only = false,
-        args = {"curl", "-fsSL", "-A", "Mozilla/5.0 Chrome", "-e", "https://www.bilibili.com/", api}})
+        args = {"curl", "-fsSL", api,
+        "-A", "Mozilla/5.0 Chrome",
+        "-e", "https://www.bilibili.com/"}
+    })
+
     if res.status==0 then
-        local cid = res.stdout:match('"cid":(%d+),')
+        local cid = parse_cid(res.stdout)
+        if not cid then return end
         local danmaku_url = ('https://comment.bilibili.com/%d.xml'):format(cid)
         mp.osd_message("弹幕正在加载中......")
         return danmaku_url
     end
-    input.log("获取视频信息失败", "{\\c&H7a77f2&}")
+    input.log("错误: 获取视频信息失败", "{\\c&H7a77f2&}")
 end
 
 mp.add_key_binding("Ctrl+d", "load-bilibili-danmaku", function()
@@ -263,7 +284,7 @@ mp.add_key_binding("Ctrl+d", "load-bilibili-danmaku", function()
     })
 end)
 
-mp.add_key_binding("KP0", function()
+mp.add_key_binding("KP0", "danmaku-sync", function()
     local time = mp.get_property_number("time-pos", 0)
     mp.commandv("set", "secondary-sub-delay", time)
 end)
