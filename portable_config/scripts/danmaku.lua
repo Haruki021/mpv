@@ -156,7 +156,7 @@ local function danmaku_fetch(url)
     local res = mp.command_native({name = "subprocess",
         capture_stdout = true, capture_stderr = true, playback_only = false,
         args = {"curl", "-fsSL", url, "--compressed",
-        "-A", "Mozilla/5.0 Chrome",
+        "-A", "Mozilla/5.0 Chrome/143.0.0.0 Safari/537.36",
         "-e", "https://www.bilibili.com/"}
     })
 
@@ -196,14 +196,30 @@ local function danmaku_vfilter(cnt, fps)
     end
 end
 
+-- 获取弹幕轨道id
+local function danmaku_id()
+    local list = mp.get_property_native("track-list")
+    local cnt = 1
+    for _, v in ipairs(list) do
+        if v.type == "sub" then
+            if v.title == "danmaku" then
+                mp.commandv("sub-remove", v.id)
+            else
+                cnt = cnt + 1
+            end
+        end
+    end
+    return cnt
+end
+
 -- 统一加载流程（下载→解析→加载ASS→滤镜）
 local function load_danmaku_from_url(url, fps)
     local xml_content = url and danmaku_fetch(url)
     local cnt = xml_content and process_danmaku(xml_content, fps)
     if cnt then
-        mp.commandv("sub-remove", 1)
-        mp.commandv("sub-add", ass_path, "auto")
-        mp.set_property_number("secondary-sid", 1)
+        local danmaku_id = danmaku_id()
+        mp.commandv("sub-add", ass_path, "auto", "danmaku")
+        mp.set_property_number("secondary-sid", danmaku_id)
         mp.msg.info(string.format("Total %d danmakus loaded.", cnt))
     end
     danmaku_vfilter(cnt, fps)
@@ -249,13 +265,13 @@ local function danmaku_url(value)
         input.log("无效地址: 未识别 BV/AV/EP/SS 类型", "{\\c&H7a77f2&}")
         return
     end
+
     local res = mp.command_native({name = "subprocess",
         capture_stdout = true, capture_stderr = true, playback_only = false,
         args = {"curl", "-fsSL", api,
-        "-A", "Mozilla/5.0 Chrome",
+        "-A", "Mozilla/5.0 Chrome/143.0.0.0 Safari/537.36",
         "-e", "https://www.bilibili.com/"}
     })
-
     if res.status==0 then
         local cid = parse_cid(res.stdout)
         if not cid then return end
