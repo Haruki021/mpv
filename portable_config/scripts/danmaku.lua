@@ -74,7 +74,7 @@ end
 
 -- 生成滚动弹幕动画（从右向左滑动）
 local function generate_move_effect(dm, fps, tracks)
-    local width = utf8_len(dm.text)*dm.attrs.fs/2
+    local width = utf8_len(dm.text)*dm.attrs.fs*0.6
     local speed  = fps<60 and 4*fps or 2*fps
     dm.attrs.dur = (1920 + width)/speed
 
