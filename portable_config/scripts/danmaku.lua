@@ -9,9 +9,9 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Microsoft YaHei,40,&H33FFFFFF,&H000000FF,&H33000000,&H00000000,0,0,0,0,100,100,0,0,1,1,0,7,0,0,0,1
-Style: Top,Microsoft YaHei,40,&H33FFFFFF,&H000000FF,&H33000000,&H00000000,0,0,0,0,100,100,0,0,1,1,0,8,0,0,0,1
-Style: Bottom,Microsoft YaHei,40,&H33FFFFFF,&H00000000,&H33000000,&H00000000,0,0,0,0,100,100,0,0,1,1,0,2,0,0,0,1
+Style: Default,Microsoft YaHei,%d,&H33FFFFFF,&H33FFFFFF,&H80000000,&H80000000,0,0,0,0,100,100,0,0,1,1,0,7,0,0,0,1
+Style: Top,Microsoft YaHei,%d,&H33FFFFFF,&H33FFFFFF,&H80000000,&H80000000,0,0,0,0,100,100,0,0,1,1,0,8,0,0,0,1
+Style: Bottom,Microsoft YaHei,%d,&H33FFFFFF,&H33FFFFFF,&H80000000,&H80000000,0,0,0,0,100,100,0,0,1,1,0,2,0,0,0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -28,23 +28,23 @@ local function xml_unescape(s)
 end
 
 -- 解析B站弹幕属性（官方标准格式）
-local function parse_danmaku_attr(attr_str)
-    local attrs = {start=0, mode=1, fs=40, color=0xFFFFFF, dur=3}
+local function parse_danmaku_attr(attr_str, fsr)
+    local attrs = {start=0, mode=1, fs=fsr*50, color=0xFFFFFF, dur=3}
     local parts = {}
     for p in attr_str:gmatch("[^,]+") do parts[#parts+1] = p end
 
     attrs.start = tonumber(parts[1]) or 0
     attrs.mode = tonumber(parts[2]) or 1
-    attrs.fs = math.min((tonumber(parts[3]) or 25)*2, 40)
+    attrs.fs = (tonumber(parts[3]) or 25)*2*fsr
     attrs.color = tonumber(parts[4]) or 0xFFFFFF
     return attrs
 end
 
 -- 正则解析XML弹幕
-local function parse_xml_danmaku(xml_content)
+local function parse_xml_danmaku(xml_content, fsr)
     local danmaku = {}
     for p_attr, text in xml_content:gmatch('<d%s+p="([^"]*)".->%s*(.-)%s*</d>') do
-        danmaku[#danmaku+1] = {attrs=parse_danmaku_attr(p_attr), text=xml_unescape(text)}
+        danmaku[#danmaku+1] = {attrs=parse_danmaku_attr(p_attr, fsr), text=xml_unescape(text)}
     end
     return danmaku
 end
@@ -104,7 +104,7 @@ local function sec_to_ass_time(seconds)
 end
 
 -- 弹幕行转ASS字幕行
-local function danmaku_to_ass(dm, fps, tracks)
+local function danmaku_to_ass(dm, fps, fsr, tracks)
     local color = convert_bili_color_to_ass(dm.attrs.color)
     local style = "Default"
     local parts = {}
@@ -117,7 +117,7 @@ local function danmaku_to_ass(dm, fps, tracks)
         table.insert(parts, generate_move_effect(dm, fps, tracks))
     end
 
-    if dm.attrs.fs ~= 40 then table.insert(parts, "\\fs"..dm.attrs.fs) end
+    if dm.attrs.fs ~= fsr*50 then table.insert(parts, "\\fs"..dm.attrs.fs) end
     if color ~= "&HFFFFFF&" then table.insert(parts, "\\1c"..color) end
     local effect = #parts==0 and "" or "{"..table.concat(parts).."}"
 
@@ -128,17 +128,17 @@ local function danmaku_to_ass(dm, fps, tracks)
 end
 
 -- 解析XML并生成ASS弹幕文件
-local function process_danmaku(xml_content, fps)
-    local danmaku = parse_xml_danmaku(xml_content)
+local function process_danmaku(xml_content, fps, fsr)
+    local danmaku = parse_xml_danmaku(xml_content, fsr)
     if #danmaku==0 then mp.msg.warn("No danmaku parsed.") return false end
 
     table.sort(danmaku, function(a, b)
         return a.attrs.start < b.attrs.start
     end)
 
-    local ass_content, tracks = {ASS_HEADER}, {}
+    local ass_content, tracks = {ASS_HEADER:gsub("%%d",fsr*50)}, {}
     for i = 1, #danmaku do
-        ass_content[i+1] = danmaku_to_ass(danmaku[i], fps, tracks)
+        ass_content[i+1] = danmaku_to_ass(danmaku[i], fps, fsr, tracks)
     end
 
     local ass_file = io.open(ass_path, "w")
@@ -173,7 +173,8 @@ local function danmaku_info()
     local data = utils.parse_json(result.stdout or "") or {}
     return {
         url = (((data.subtitles or {}).danmaku or {})[1] or{}).url,
-        fps = data.fps or 30
+        fps = data.fps or 30,
+        fsr= math.floor((data.aspect_ratio or 1.78)/0.15)/10
     }
 end
 
@@ -213,9 +214,9 @@ local function danmaku_id()
 end
 
 -- 统一加载流程（下载→解析→加载ASS→滤镜）
-local function load_danmaku_from_url(url, fps)
+local function load_danmaku_from_url(url, fps, fsr)
     local xml_content = url and danmaku_fetch(url)
-    local cnt = xml_content and process_danmaku(xml_content, fps)
+    local cnt = xml_content and process_danmaku(xml_content, fps, fsr)
     if cnt then
         local danmaku_id = danmaku_id()
         mp.commandv("sub-add", ass_path, "auto", "danmaku")
@@ -228,7 +229,7 @@ end
 
 mp.add_hook("on_preloaded", 50, function()
     local data = danmaku_info()
-    load_danmaku_from_url(data.url, data.fps)
+    load_danmaku_from_url(data.url, data.fps, data.fsr)
 end)
 -------------------------------------------------------------------------------------------
 ---以下部分实现加载本地视频弹幕---------------------------------------------------------------
@@ -291,7 +292,7 @@ mp.add_key_binding("Ctrl+d", "load-bilibili-danmaku", function()
             local url = danmaku_url(value)
             if not url then return end
             local fps = mp.get_property_number("container-fps", 30)
-            local cnt = load_danmaku_from_url(url, fps)
+            local cnt = load_danmaku_from_url(url, fps, 1)
             if cnt then
                 mp.osd_message(("%d条弹幕加载成功!"):format(cnt))
                 input.terminate()
