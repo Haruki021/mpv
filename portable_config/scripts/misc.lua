@@ -15,10 +15,9 @@ mp.add_key_binding("e", "open-in-explorer", function()
     local path = mp.get_property("path", "")
     if utils.file_info(path) then
         mp.command_native({
-            name = "subprocess",
-            playback_only = false,
-            detach = true,
-            args = { 'explorer', '/select,', path},
+            name = "subprocess", playback_only = false, detach = true,
+            args = { 'explorer', '/select,', path }, --windows
+            --args = { 'xdg-open', (utils.split_path(path)) }, --linux
         })
     else
         mp.osd_message("No valid path found.", 3)
